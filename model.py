@@ -3,8 +3,10 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.nn.modules import activation
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from param import args
+from egcn_h import GRCU_Cell
 
 class ObjEncoder(nn.Module):
     ''' Encodes object labels using GloVe. '''
@@ -178,11 +180,12 @@ class ASODecoderLSTM(nn.Module):
         self.drop = nn.Dropout(p=dropout_ratio)
         self.drop_env = nn.Dropout(p=args.featdropout)
         self.feat_att_layer = SoftDotAttention(hidden_size, args.visual_feat_size+args.angle_feat_size)
-        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size, hidden_size)
+        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size+args.glove_dim, hidden_size)
 
         self.action_att_layer = SoftDotAttention(hidden_size, hidden_size)
         self.subject_att_layer = SoftDotAttention(hidden_size, hidden_size)
         self.object_att_layer = SoftDotAttention(hidden_size, hidden_size)
+        self.graph_att_layer = SoftDotAttention(hidden_size,hidden_size)
 
         self.fuse_a = nn.Linear(hidden_size, 1)
         self.fuse_s = nn.Linear(hidden_size, 1)
@@ -190,9 +193,15 @@ class ASODecoderLSTM(nn.Module):
 
         self.value_action = nn.Sequential(nn.Linear(args.angle_feat_size, hidden_size), nn.Tanh())
         self.subject_att = ScaledSoftDotAttention(args.angle_feat_size, args.angle_feat_size, args.visual_feat_size, hidden_size)    
-        self.object_att = ScaledSoftDotAttention(hidden_size, args.glove_dim+args.angle_feat_size, args.glove_dim+args.angle_feat_size, hidden_size)
-
-        #cand attention layer
+        self.object_att = ScaledSoftDotAttention(hidden_size, args.glove_dim+args.angle_feat_size, args.glove_dim+args.angle_feat_size, 
+        hidden_size)
+        self.object_graph_att = SoftDotAttention(hidden_size,args.glove_dim)
+        self.object_mapping = nn.Sequential(nn.Linear(args.in_feats,100),nn.Tanh())
+        self.object_mapping_out = nn.Sequential(nn.Linear(100,args.out_feats),nn.Tanh())
+        if args.egcn_activation == 'relu':
+            activation = torch.nn.RReLU()
+        self.egcn = GRCU_Cell(args,activation)
+#        cand attention layer
         self.cand_att_a = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_s = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_o = SoftDotAttention(hidden_size, hidden_size)
@@ -206,17 +215,37 @@ class ASODecoderLSTM(nn.Module):
                 already_dropfeat=False):
         action_embeds = self.action_embedding(action)
         action_embeds = self.drop(action_embeds)
-
         if not already_dropfeat:
             feature[..., :-args.angle_feat_size] = self.drop_env(feature[..., :-args.angle_feat_size])
             cand_visual_feat = self.drop_env(cand_visual_feat)
             near_visual_feat = self.drop_env(near_visual_feat)
         cand_obj_feat = self.drop_env(cand_obj_feat)
         near_obj_feat = self.drop_env(near_obj_feat)
+        # to_save = [cand_angle_feat.cpu(),cand_obj_feat.cpu(),near_angle_feat.cpu(),near_obj_mask.cpu(),near_obj_feat.cpu()]
+        # torch.save(to_save,'test')
+        # import ipdb;ipdb.set_trace()
+        object_graph_feat = torch.cat((cand_obj_feat.unsqueeze(2),near_obj_feat),2)
 
+        angle_graph_feat = near_angle_feat.unsqueeze(3).expand(-1,-1,-1,object_graph_feat.shape[3],-1)
+
+        object_graph_feat = object_graph_feat.reshape(near_obj_feat.shape[0],-1,near_obj_feat.shape[-1])
+
+        angle_graph_feat = angle_graph_feat.reshape(near_angle_feat.shape[0],-1,angle_graph_feat.shape[-1])
+
+        object_graph_feat = torch.cat((object_graph_feat,angle_graph_feat),2)
+
+        adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
+
+        adj_list = adj_list/object_graph_feat.shape[1]
+
+        mask = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1]).cuda()
+        object_graph_feat = self.object_mapping(object_graph_feat)
+        node_feats = self.egcn(adj_list,object_graph_feat,mask)
+        node_feats = self.object_mapping_out(node_feats)
         prev_h1_drop = self.drop(prev_h1)
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
-        concat_input = torch.cat((action_embeds, attn_feat), dim=-1)
+        node_feat, _ = self.object_graph_att(prev_h1_drop,node_feats, output_tilde=False)
+        concat_input = torch.cat((action_embeds, attn_feat,node_feat), dim=-1)
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
         h_1_drop = self.drop(h_1)
 
@@ -226,7 +255,6 @@ class ASODecoderLSTM(nn.Module):
         h_a_drop, u_a_drop = self.drop(h_a), self.drop(u_a)
         h_s_drop, u_s_drop = self.drop(h_s), self.drop(u_s)
         h_o_drop, u_o_drop = self.drop(h_o), self.drop(u_o)
-
         fusion_weight = torch.cat([self.fuse_a(u_a_drop), self.fuse_s(u_s_drop), self.fuse_o(u_o_drop)], dim=-1)
         fusion_weight = F.softmax(fusion_weight, dim=-1)
 

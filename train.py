@@ -257,14 +257,23 @@ def train_val():
     # Create a batch training environment that will also preprocess text
     vocab = read_vocab(TRAIN_VOCAB)
     tok = Tokenizer(vocab=vocab, encoding_length=args.maxInput)
-
-    feat_dict = read_img_features(features)
+    if args.debug:
+        from collections import defaultdict
+        feat_dict = defaultdict(lambda:np.zeros((36,2048),dtype=np.float32))
+        featurized_scans = set(json.load(open('./methods/neural_symbolic/debug_featurized_scans.json','r')))
+        args.views = 36
+    else:
+        feat_dict = read_img_features(features)
+        featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
     with open('./img_features/objects/pano_object_class.pkl', 'rb') as f:
         obj_dict = pkl.load(f)
-
-    featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
-
-    train_env = R2RBatch(feat_dict, obj_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok)
+    
+    if args.debug:
+        train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
+                         splits=['val_unseen'], tokenizer=tok)
+    else:
+        train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
+                            splits=['train'], tokenizer=tok)
     from collections import OrderedDict
 
     val_env_names = ['train', 'val_seen', 'val_unseen']
@@ -272,6 +281,9 @@ def train_val():
         val_env_names = ['val_seen','val_unseen']
     else:
         pass
+
+    if args.debug:
+        val_env_names = ['val_unseen']
 
     val_envs = OrderedDict(
         ((split,

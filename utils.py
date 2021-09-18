@@ -688,3 +688,17 @@ def print_progress(iteration, total, prefix='', suffix='', decimals=1, bar_lengt
     if iteration == total:
         sys.stdout.write('\n')
     sys.stdout.flush()
+
+class Namespace(object):
+    '''
+    helps referencing object in a dictionary as dict.key instead of dict['key']
+    '''
+    def __init__(self, adict):
+        self.__dict__.update(adict)
+
+def pad_with_last_val(vect,k):
+    device = 'cuda' if vect.is_cuda else 'cpu'
+    pad = torch.ones(vect.shape[0],k - vect.size(0),
+                         dtype=torch.long).cuda() * vect[-1]
+    vect = torch.cat([vect,pad],dim=1)
+    return vect

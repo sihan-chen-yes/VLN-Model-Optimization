@@ -40,11 +40,15 @@ class EnvBatch():
                 print('The feature size is %d' % self.feature_size)
         else:
             print('Image features not provided')
-            self.features = None
             self.image_w = 640
             self.image_h = 480
             self.vfov = 60
-        self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
+            self.features = feature_store
+            self.feature_size = 2048
+        if args.debug:
+            self.featurized_scans = set(json.load(open('./methods/neural_symbolic/debug_featurized_scans.json','r')))
+        else:
+            self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
         self.batch_size = batch_size
         self.sim = MatterSim.Simulator()
         self.sim.setRenderingEnabled(False)
@@ -73,7 +77,7 @@ class EnvBatch():
         feature_states = []
         for state in self.sim.getState():
             long_id = self._make_id(state.scanId, state.location.viewpointId)
-            if self.features:
+            if self.features is not None:
                 feature = self.features[long_id]
                 # feature = self.features[long_id][state.viewIndex,:]
                 feature_states.append((feature, state))
@@ -102,6 +106,8 @@ class R2RBatch():
         self.obj_dict = obj_store
         if feature_store:
             self.feature_size = self.env.feature_size
+        if args.debug:
+            self.feature_size=2048
         self.data = []
         if tokenizer:
             self.tok = tokenizer

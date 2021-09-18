@@ -36,7 +36,7 @@ class Param:
         self.parser.add_argument("--accumulateGrad", dest='accumulate_grad', action='store_const', default=False, const=True)
         self.parser.add_argument("--features", type=str, default='imagenet')
         self.parser.add_argument("--zero_feature", dest="zero_feature", action="store_const", default=False, const=True)
-
+        self.parser.add_argument('--debug',action='store_true')
         # Env Dropout Param
         self.parser.add_argument('--featdropout', type=float, default=0.3)
 
@@ -81,6 +81,9 @@ class Param:
         self.parser.add_argument("--visual_feat", dest="visual_feat", action="store_const", default=False, const=True)
         self.parser.add_argument("--visual_feat_size", dest="visual_feat_size", type=int, default=2048)
 
+        self.parser.add_argument("--in_feats",type=int,default=428)
+        self.parser.add_argument("--out_feats",type=int,default=300)
+        self.parser.add_argument("--egcn_activation",type=str,default='relu')
         #debug
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)
