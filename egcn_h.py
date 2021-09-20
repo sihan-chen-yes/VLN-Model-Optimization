@@ -81,13 +81,13 @@ class GRCU_Cell(torch.nn.Module):
         super().__init__()
         self.args = args
         cell_args = u.Namespace({})
-        cell_args.rows = 100
-        cell_args.cols = 100
+        cell_args.rows = args.gcn_dim
+        cell_args.cols = args.gcn_dim
 
         self.evolve_weights = mat_GRU_cell(cell_args)
 
         self.activation = activation
-        self.GCN_init_weights = Parameter(torch.Tensor(100,100))
+        self.GCN_init_weights = Parameter(torch.Tensor(args.gcn_dim,args.gcn_dim))
         self.reset_param(self.GCN_init_weights)
 
     def reset_param(self,t):
@@ -97,7 +97,6 @@ class GRCU_Cell(torch.nn.Module):
 
     def forward(self,Ahat,node_embs,mask):
             #first evolve the weights from the initial and use the new weights with the node_embs
-        import ipdb;ipdb.set_trace()
         GCN_weights = self.GCN_init_weights
         GCN_weights = self.evolve_weights(GCN_weights,node_embs,mask)
         node_embs = self.activation(Ahat.matmul(node_embs.matmul(GCN_weights)))

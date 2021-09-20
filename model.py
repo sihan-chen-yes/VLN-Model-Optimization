@@ -196,8 +196,8 @@ class ASODecoderLSTM(nn.Module):
         self.object_att = ScaledSoftDotAttention(hidden_size, args.glove_dim+args.angle_feat_size, args.glove_dim+args.angle_feat_size, 
         hidden_size)
         self.object_graph_att = SoftDotAttention(hidden_size,args.glove_dim)
-        self.object_mapping = nn.Sequential(nn.Linear(args.in_feats,100),nn.Tanh())
-        self.object_mapping_out = nn.Sequential(nn.Linear(100,args.out_feats),nn.Tanh())
+        self.object_mapping = nn.Sequential(nn.Linear(args.in_feats,args.gcn_dim),nn.Tanh())
+        self.object_mapping_out = nn.Sequential(nn.Linear(args.gcn_dim,args.out_feats),nn.Tanh())
         if args.egcn_activation == 'relu':
             activation = torch.nn.RReLU()
         self.egcn = GRCU_Cell(args,activation)
