@@ -88,13 +88,25 @@ class Param:
         #debug
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)
-        
+
         # A2C
         self.parser.add_argument("--gamma", default=0.9, type=float)
         self.parser.add_argument("--normalize", dest="normalize_loss", default="total", type=str, help='batch or total')
 
         self.args = self.parser.parse_args()
+        args = param.args
+        args.TRAIN_VOCAB = 'tasks/R2R/data/train_vocab.txt'
+        args.TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
 
+        args.IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
+        args.CANDIDATE_FEATURES = 'img_features/ResNet-152-candidate.tsv'
+        args.features_fast = 'img_features/ResNet-152-imagenet-fast.tsv'
+        args.log_dir = 'snap/%s' % args.name
+        self.args=args
+        if not os.path.exists(args.log_dir):
+            os.makedirs(args.log_dir)
+        import json
+        json.dump(self.args,os.path.join(args.log_dir,'args_list.json'))
         if self.args.optim == 'rms':
             print("Optimizer: Using RMSProp")
             self.args.optimizer = torch.optim.RMSprop
@@ -108,16 +120,14 @@ class Param:
             assert False
 
 param = Param()
+# args = param.args
+# args.TRAIN_VOCAB = 'tasks/R2R/data/train_vocab.txt'
+# args.TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
+
+# args.IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
+# args.CANDIDATE_FEATURES = 'img_features/ResNet-152-candidate.tsv'
+# args.features_fast = 'img_features/ResNet-152-imagenet-fast.tsv'
+# args.log_dir = 'snap/%s' % args.name
 args = param.args
-args.TRAIN_VOCAB = 'tasks/R2R/data/train_vocab.txt'
-args.TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
-
-args.IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
-args.CANDIDATE_FEATURES = 'img_features/ResNet-152-candidate.tsv'
-args.features_fast = 'img_features/ResNet-152-imagenet-fast.tsv'
-args.log_dir = 'snap/%s' % args.name
-
-if not os.path.exists(args.log_dir):
-    os.makedirs(args.log_dir)
 DEBUG_FILE = open(os.path.join('snap', args.name, "debug.log"), 'w')
 
