@@ -207,14 +207,16 @@ class ASODecoderLSTM(nn.Module):
         self.cand_att_o = SoftDotAttention(hidden_size, hidden_size)
         
     def compute_adj_list(self,near_id_feat):
-        import ipdb;ipdb.set_trace()
         current_list = near_id_feat.unsqueeze(-1).expand(-1,-1,near_id_feat.shape[1])
-        target_list = near_id_feat.unsequeeze(1).expand(-1,near_id_feat.shape[1],-1)
+        target_list = near_id_feat.unsqueeze(1).expand(-1,near_id_feat.shape[1],-1)
         mod_current = current_list%12
         mod_target = target_list % 12
         distance =  6 - mod_current
         norm_target = (mod_target+distance)%12
-        weight = 1/torch.exp(torch.abs(6-norm_target).type(dtype=torch.float32))
+        if args.distance_decay_function == 'exp':
+            weight = 1/torch.exp(torch.abs(6-norm_target).type(dtype=torch.float32))
+        else:
+            weight = 1/(torch.abs(6-norm_target).type(dtype=torch.float32)+1)
         di = weight.sum(dim=1)
         di = di.pow(-1/2)
         weight = di.unsqueeze(1)*weight*di.unsqueeze(-1).detach()
@@ -239,14 +241,13 @@ class ASODecoderLSTM(nn.Module):
         # torch.save(to_save,'test')
         # import ipdb;ipdb.set_trace()
         object_graph_feat = torch.cat((cand_obj_feat.unsqueeze(2),near_obj_feat),2)
-
+        near_id_feat = near_id_feat.unsqueeze(-1).expand(-1,-1,-1,object_graph_feat.shape[3])
         angle_graph_feat = near_angle_feat.unsqueeze(3).expand(-1,-1,-1,object_graph_feat.shape[3],-1)
 
         object_graph_feat = object_graph_feat.reshape(near_obj_feat.shape[0],-1,near_obj_feat.shape[-1])
 
         angle_graph_feat = angle_graph_feat.reshape(near_angle_feat.shape[0],-1,angle_graph_feat.shape[-1])
 
-        near_id_feat = near_id_feat.unsqueeze(3).expand(-1,-1,object_graph_feat.shape[3])
         near_id_feat = near_id_feat.reshape(near_id_feat.shape[0],-1)
         object_graph_feat = torch.cat((object_graph_feat,angle_graph_feat),2)
         adj_list = self.compute_adj_list(near_id_feat)

@@ -85,6 +85,7 @@ class Param:
         self.parser.add_argument("--out_feats",type=int,default=300)
         self.parser.add_argument("--gcn_dim",type=int,default=100)
         self.parser.add_argument("--egcn_activation",type=str,default='relu')
+        self.parser.add_argument("--distance_decay_function",type=str,default='exp')
         #debug
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)

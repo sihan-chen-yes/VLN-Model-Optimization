@@ -165,7 +165,7 @@ class Seq2SeqAgent(BaseAgent):
         near_obj_mask = np.ones((len(obs), max_cand_leng, 4), dtype=np.uint8)
         near_obj_class = np.zeros((len(obs), max_cand_leng, 4, args.top_N_obj), dtype=np.float32)
         near_edge_feat = np.zeros((len(obs), max_cand_leng, 4, args.angle_feat_size), dtype=np.float32)
-        near_id_feat = np.zeros((len(obs), max_cand_leng, 4),dtype=np.float32)
+        near_id_feat = np.zeros((len(obs), max_cand_leng, 5),dtype=np.float32)
         for i, ob in enumerate(obs):
             for j, c in enumerate(ob['candidate']):
                 cand_visual_feat[i, j, :] = c['visual_feat']
@@ -177,7 +177,7 @@ class Seq2SeqAgent(BaseAgent):
                 near_obj_mask[i,j,...] = c['near_mask'][1:,...]
                 near_obj_class[i,j,...] = c['near_obj_class'][1:,...]
                 near_edge_feat[i,j,...] = c['near_edge_feat'][1:,...]
-                near_id_feat[i,j,...] = c['near_id_feat']
+                near_id_feat[i,j,...] = c['near_view_id']
 
         cand_visual_feat = torch.from_numpy(cand_visual_feat).cuda()
         cand_angle_feat = torch.from_numpy(cand_angle_feat).cuda()
@@ -201,12 +201,12 @@ class Seq2SeqAgent(BaseAgent):
 
         cand_leng, cand_visual_feat, cand_angle_feat, cand_obj_feat, \
         near_visual_mask, near_visual_feat, near_angle_feat, \
-        near_obj_mask, near_obj_feat, near_edge_feat = self._candidate_variable(obs)
+        near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat = self._candidate_variable(obs)
 
         return input_a_t, f_t, \
                cand_leng, cand_visual_feat, cand_angle_feat, cand_obj_feat, \
                near_visual_mask, near_visual_feat, near_angle_feat, \
-               near_obj_mask, near_obj_feat, near_edge_feat
+               near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat
     
     def _teacher_action(self, obs, ended):
         """
@@ -362,12 +362,10 @@ class Seq2SeqAgent(BaseAgent):
         h1 = h_t
         input_a_t = torch.zeros([len(obs), args.angle_feat_size]).cuda()
         for t in range(self.episode_len):
-            import ipdb;ipdb.set_trace()
             _, f_t, \
             cand_leng, cand_visual_feat, cand_angle_feat, cand_obj_feat, \
             near_visual_mask, near_visual_feat, near_angle_feat, \
             near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat = self.get_input_feat(perm_obs)
-
             if speaker is not None:       # Apply the env drop mask to the feat
                 f_t[..., :-args.angle_feat_size] *= noise
                 cand_visual_feat *= noise
@@ -482,7 +480,7 @@ class Seq2SeqAgent(BaseAgent):
             _, f_t, \
             cand_leng, cand_visual_feat, cand_angle_feat, cand_obj_feat, \
             near_visual_mask, near_visual_feat, near_angle_feat, \
-            near_obj_mask, near_obj_feat, near_edge_feat = self.get_input_feat(perm_obs)
+            near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat  = self.get_input_feat(perm_obs)
             if speaker is not None:       # Apply the env drop mask to the feat
                 f_t[..., :-args.angle_feat_size] *= noise
                 cand_visual_feat *= noise
@@ -491,7 +489,7 @@ class Seq2SeqAgent(BaseAgent):
             last_h_, _, _, _ = self.decoder(input_a_t, f_t,
                                             cand_visual_feat, cand_angle_feat, cand_obj_feat,
                                             near_visual_mask, near_visual_feat, near_angle_feat,
-                                            near_obj_mask, near_obj_feat, near_edge_feat,
+                                            near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,  
                                             h_t, h1, c_t,
                                             ctx, ctx_mask,
                                             already_dropfeat=(speaker is not None))
