@@ -205,11 +205,25 @@ class ASODecoderLSTM(nn.Module):
         self.cand_att_a = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_s = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_o = SoftDotAttention(hidden_size, hidden_size)
+        
+    def compute_adj_list(self,near_id_feat):
+        import ipdb;ipdb.set_trace()
+        current_list = near_id_feat.unsqueeze(-1).expand(-1,-1,near_id_feat.shape[1])
+        target_list = near_id_feat.unsequeeze(1).expand(-1,near_id_feat.shape[1],-1)
+        mod_current = current_list%12
+        mod_target = target_list % 12
+        distance =  6 - mod_current
+        norm_target = (mod_target+distance)%12
+        weight = 1/torch.exp(torch.abs(6-norm_target).type(dtype=torch.float32))
+        di = weight.sum(dim=1)
+        di = di.pow(-1/2)
+        weight = di.unsqueeze(1)*weight*di.unsqueeze(-1).detach()
+        return weight
 
     def forward(self, action, feature,
                 cand_visual_feat, cand_angle_feat, cand_obj_feat,
                 near_visual_mask, near_visual_feat, near_angle_feat,
-                near_obj_mask, near_obj_feat, near_edge_feat,
+                near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat, 
                 h_0, prev_h1, c_0,
                 ctx, ctx_mask=None,
                 already_dropfeat=False):
@@ -232,12 +246,12 @@ class ASODecoderLSTM(nn.Module):
 
         angle_graph_feat = angle_graph_feat.reshape(near_angle_feat.shape[0],-1,angle_graph_feat.shape[-1])
 
+        near_id_feat = near_id_feat.unsqueeze(3).expand(-1,-1,object_graph_feat.shape[3])
+        near_id_feat = near_id_feat.reshape(near_id_feat.shape[0],-1)
         object_graph_feat = torch.cat((object_graph_feat,angle_graph_feat),2)
-
-        adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
-
-        adj_list = adj_list/object_graph_feat.shape[1]
-
+        adj_list = self.compute_adj_list(near_id_feat)
+        #adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
+        
         mask = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1]).cuda()
         object_graph_feat = self.object_mapping(object_graph_feat)
         node_feats = self.egcn(adj_list,object_graph_feat,mask)

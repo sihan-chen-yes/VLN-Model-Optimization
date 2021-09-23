@@ -248,8 +248,8 @@ class R2RBatch():
             near_obj_class = [self.obj_dict[scanId][viewpointId][pointId]['object_class'][:args.top_N_obj] 
                                 if pointId != -1 else np.zeros(args.top_N_obj) for pointId in near_pointId]
             near_obj_class = np.stack(near_obj_class)
-
-            return near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class
+            near_view_id = np.array(near_pointId)
+            return near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class,near_view_id
             
         base_heading = (viewId % 12) * math.radians(30)
         adj_dict = {}
@@ -298,13 +298,14 @@ class R2RBatch():
                         }
             for k,v in adj_dict.items():
                 adj_dict[k]['obj_class'] = self.obj_dict[scanId][viewpointId][v['pointId']]['object_class'][:args.top_N_obj]
-                near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class = _get_near(v, base_heading)
+                near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class,near_view_id = _get_near(v, base_heading)
                 adj_dict[k]['near_pointId'] = near_pointId
                 adj_dict[k]['near_mask'] = near_mask
                 adj_dict[k]['near_visual_feat'] = near_visual_feat
                 adj_dict[k]['near_angle_feat'] = near_angle_feat
                 adj_dict[k]['near_edge_feat'] = near_edge_feat    
                 adj_dict[k]['near_obj_class'] = near_obj_class
+                adj_dict[k]['near_view_id'] = near_view_id
 
             candidate = list(adj_dict.values())
             self.buffered_state_dict[long_id] = [
@@ -330,13 +331,14 @@ class R2RBatch():
                 c_new['visual_feat'] = visual_feat
                 c_new.pop('normalized_heading')
                 c_new['obj_class'] = self.obj_dict[scanId][viewpointId][ix]['object_class'][:args.top_N_obj]
-                near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class = _get_near(c_new, base_heading)
+                near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class,near_view_id = _get_near(c_new, base_heading)
                 c_new['near_pointId'] = near_pointId
                 c_new['near_mask'] = near_mask
                 c_new['near_visual_feat'] = near_visual_feat
                 c_new['near_angle_feat'] = near_angle_feat
                 c_new['near_edge_feat'] = near_edge_feat 
                 c_new['near_obj_class'] = near_obj_class
+                c_new['near_view_id'] = near_view_id
                 candidate_new.append(c_new)
             return candidate_new
    

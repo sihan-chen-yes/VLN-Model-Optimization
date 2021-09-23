@@ -94,7 +94,7 @@ class Param:
         self.parser.add_argument("--normalize", dest="normalize_loss", default="total", type=str, help='batch or total')
 
         self.args = self.parser.parse_args()
-        args = param.args
+        args = self.args
         args.TRAIN_VOCAB = 'tasks/R2R/data/train_vocab.txt'
         args.TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
 
@@ -106,7 +106,7 @@ class Param:
         if not os.path.exists(args.log_dir):
             os.makedirs(args.log_dir)
         import json
-        json.dump(self.args,os.path.join(args.log_dir,'args_list.json'))
+        json.dump(vars(self.args),open(os.path.join(args.log_dir,'args_list.json'),'w'))
         if self.args.optim == 'rms':
             print("Optimizer: Using RMSProp")
             self.args.optimizer = torch.optim.RMSprop
