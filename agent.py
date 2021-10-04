@@ -333,7 +333,7 @@ class Seq2SeqAgent(BaseAgent):
 
         ctx, h_t, c_t = self.encoder(seq, seq_lengths)
         ctx_mask = seq_mask
-
+        self.decoder.egcn.init_weights(h_t)
         # Record starting point
         traj = [{
             'instr_id': ob['instr_id'],

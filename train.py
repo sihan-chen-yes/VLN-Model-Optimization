@@ -271,12 +271,17 @@ def train_val():
     if args.debug:
         train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
                          splits=['val_unseen'], tokenizer=tok)
+    elif args.train_sub:
+        train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
+                         splits=['train-sub'], tokenizer=tok)
     else:
         train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
                             splits=['train'], tokenizer=tok)
     from collections import OrderedDict
 
     val_env_names = ['train', 'val_seen', 'val_unseen']
+    if args.train_sub:
+        val_env_names = ['train-sub', 'val_seen', 'val_unseen']
     if args.submit:
         val_env_names = ['val_seen','val_unseen']
     else:

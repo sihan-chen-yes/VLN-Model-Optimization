@@ -28,6 +28,8 @@ class Param:
 
         # More Paths from
         self.parser.add_argument("--aug", default=None)
+        self.parser.add_argument('--train_sub',action='store_true',default=False)
+
 
         # Listener Model Config
         self.parser.add_argument("--zeroInit", dest='zero_init', action='store_const', default=False, const=True)
@@ -106,6 +108,12 @@ class Param:
         self.args=args
         if not os.path.exists(args.log_dir):
             os.makedirs(args.log_dir)
+        current_path = os.getcwd()
+        git_path = os.path.dirname(__file__)
+        import git
+        repo = git.Repo('./methods/nvem/')
+        commit_hash = repo.head.object.hexsha
+        self.args.commit_hash = commit_hash
         import json
         json.dump(vars(self.args),open(os.path.join(args.log_dir,'args_list.json'),'w'))
         if self.args.optim == 'rms':

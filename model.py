@@ -250,9 +250,10 @@ class ASODecoderLSTM(nn.Module):
 
         near_id_feat = near_id_feat.reshape(near_id_feat.shape[0],-1)
         object_graph_feat = torch.cat((object_graph_feat,angle_graph_feat),2)
-        adj_list = self.compute_adj_list(near_id_feat)
-        #adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
-        
+        if args.distance_decay_function =='same':
+            adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
+        else:
+            adj_list = self.compute_adj_list(near_id_feat)
         mask = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1]).cuda()
         object_graph_feat = self.object_mapping(object_graph_feat)
         node_feats = self.egcn(adj_list,object_graph_feat,mask)

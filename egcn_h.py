@@ -87,19 +87,27 @@ class GRCU_Cell(torch.nn.Module):
         self.evolve_weights = mat_GRU_cell(cell_args)
 
         self.activation = activation
-        self.GCN_init_weights = Parameter(torch.Tensor(args.gcn_dim,args.gcn_dim))
-        self.reset_param(self.GCN_init_weights)
-
+        self.GCN_init_mapping = Parameter(torch.Tensor(1,args.gcn_dim))
+        self.init_mapping = nn.Sequential(nn.Linear(args.rnn_dim,args.gcn_dim),nn.Tanh())
+        self.reset_param(self.GCN_init_mapping)
+        self.GCN_pre_weights = None
+        self.GCN_init_weights = None
     def reset_param(self,t):
         #Initialize based on the number of columns
         stdv = 1. / math.sqrt(t.size(1))
         t.data.uniform_(-stdv,stdv)
 
+    def init_weights(self,ht):
+        ht = self.init_mapping(ht)
+        self.GCN_pre_weights = torch.matmul(ht.unsqueeze(-1),self.GCN_init_mapping)
+        self.GCN_init_weights = self.GCN_pre_weights
+
     def forward(self,Ahat,node_embs,mask):
             #first evolve the weights from the initial and use the new weights with the node_embs
-        GCN_weights = self.GCN_init_weights
-        GCN_weights = self.evolve_weights(GCN_weights,node_embs,mask)
-        node_embs = self.activation(Ahat.matmul(node_embs.matmul(GCN_weights)))
+        if self.GCN_pre_weights is not None:
+            GCN_weights = self.evolve_weights(self.GCN_pre_weights,node_embs,mask)
+            node_embs = self.activation(Ahat.matmul(node_embs.matmul(GCN_weights)))
+            self.GCN_pre_weights = GCN_weights
         return node_embs        
 
 class mat_GRU_cell(torch.nn.Module):
