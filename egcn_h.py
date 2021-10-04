@@ -3,7 +3,7 @@ import torch
 from torch.nn.parameter import Parameter
 import torch.nn as nn
 import math
-
+from param import args
 
 class EGCN(torch.nn.Module):
     def __init__(self, args, activation, skipfeats=False):
@@ -89,6 +89,9 @@ class GRCU_Cell(torch.nn.Module):
         self.activation = activation
         self.GCN_init_mapping = Parameter(torch.Tensor(1,args.gcn_dim))
         self.init_mapping = nn.Sequential(nn.Linear(args.rnn_dim,args.gcn_dim),nn.Tanh())
+        if args.static_gcn_weights or args.static_gcn_weights_only:
+            self.static_weights = nn.Parameter(torch.Tensor(args.gcn_dim,args.gcn_dim))
+            self.reset_param(self.static_weights)
         self.reset_param(self.GCN_init_mapping)
         self.GCN_pre_weights = None
         self.GCN_init_weights = None
@@ -107,6 +110,12 @@ class GRCU_Cell(torch.nn.Module):
         if self.GCN_pre_weights is not None:
             GCN_weights = self.evolve_weights(self.GCN_pre_weights,node_embs,mask)
             node_embs = self.activation(Ahat.matmul(node_embs.matmul(GCN_weights)))
+            if args.static_gcn_weights:
+                node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
+                node_embs = (node_embs+node_embs1)/2
+            if args.static_gcn_weights_only:
+                node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
+                node_embs = node_embs1
             self.GCN_pre_weights = GCN_weights
         return node_embs        
 

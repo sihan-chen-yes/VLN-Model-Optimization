@@ -62,6 +62,8 @@ class Param:
         self.parser.add_argument('--teacher', type=str, default='final',
                             help="How to get supervision. one of ``next`` and ``final`` ")
         self.parser.add_argument('--epsilon', type=float, default=0.1)
+        self.parser.add_argument('--static_gcn_weights',action='store_true',default=False)
+        self.parser.add_argument('--static_gcn_weights_only',action='store_true',default=False)
 
         # Model hyper params:
         self.parser.add_argument('--rnnDim', dest="rnn_dim", type=int, default=512)
