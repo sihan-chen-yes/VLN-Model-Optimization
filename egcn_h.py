@@ -105,10 +105,11 @@ class GRCU_Cell(torch.nn.Module):
         self.GCN_pre_weights = torch.matmul(ht.unsqueeze(-1),self.GCN_init_mapping)
         self.GCN_init_weights = self.GCN_pre_weights
 
-    def forward(self,Ahat,node_embs,mask):
+    def forward(self,Ahat,node_embs,mask,ht=None):
             #first evolve the weights from the initial and use the new weights with the node_embs
+        policy_score = None
         if self.GCN_pre_weights is not None:
-            GCN_weights = self.evolve_weights(self.GCN_pre_weights,node_embs,mask)
+            GCN_weights,policy_score = self.evolve_weights(self.GCN_pre_weights,node_embs,mask,ht)
             node_embs = self.activation(Ahat.matmul(node_embs.matmul(GCN_weights)))
             if args.static_gcn_weights:
                 node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
@@ -117,7 +118,7 @@ class GRCU_Cell(torch.nn.Module):
                 node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
                 node_embs = node_embs1
             self.GCN_pre_weights = GCN_weights
-        return node_embs        
+        return node_embs,policy_score        
 
 class mat_GRU_cell(torch.nn.Module):
     def __init__(self,args):
@@ -135,13 +136,14 @@ class mat_GRU_cell(torch.nn.Module):
                                    args.cols,
                                    torch.nn.Tanh())
         
-        self.choose_topk = TopK(feats = args.rows,
-                                k = args.cols)
+        # self.choose_topk = TopK(feats = args.rows,
+        #                         k = args.cols)
+        self.choose_topk = TopK_with_h()
 
-    def forward(self,prev_Q,prev_Z,mask):
+    def forward(self,prev_Q,prev_Z,mask,ht):
 
 
-        z_topk = self.choose_topk(prev_Z,mask)
+        z_topk,policy_score = self.choose_topk(prev_Z,mask,ht)
         update = self.update(z_topk,prev_Q)
         reset = self.reset(z_topk,prev_Q)
 
@@ -150,7 +152,7 @@ class mat_GRU_cell(torch.nn.Module):
 
         new_Q = (1 - update) * prev_Q + update * h_cap
 
-        return new_Q
+        return new_Q,policy_score
 
         
 
@@ -208,3 +210,33 @@ class TopK(torch.nn.Module):
         out = node_embs.gather(1,topk_indices.unsqueeze(-1).expand(-1,-1,feat_size)) * tanh(scores.gather(1,topk_indices)).unsqueeze(-1)
         #we need to transpose the output
         return out.transpose(1,2)
+class TopK_with_h(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.mapper =  nn.Sequential(nn.Linear(args.rnn_dim,args.gcn_dim),nn.Tanh())
+        self.softmax = nn.Softmax()
+        self.k = args.gcn_dim
+    def reset_param(self,t):
+        return None
+    def forward(self,node_embs,mask,h_t = None):
+        batch_size,graph_size,feat_size = node_embs.shape
+        scorer = self.mapper(h_t)
+        scores = node_embs.bmm(scorer.unsqueeze(-1)).squeeze()/scorer.norm(dim=1).unsqueeze(-1)
+        scores = scores.squeeze() + mask
+        vals, topk_indices = scores.view(batch_size,-1).topk(self.k,dim=1)
+        topk_indices = topk_indices[vals > -float("Inf")].view(batch_size,-1)
+        if topk_indices.size(1) < self.k:
+            topk_indices = u.pad_with_last_val(topk_indices,self.k)
+        tanh = torch.nn.Tanh()
+
+        if isinstance(node_embs, torch.sparse.FloatTensor) or \
+           isinstance(node_embs, torch.cuda.sparse.FloatTensor):
+            node_embs = node_embs.to_dense()
+        out = node_embs.gather(1,topk_indices.unsqueeze(-1).expand(-1,-1,feat_size)) * tanh(scores.gather(1,topk_indices)).unsqueeze(-1)
+        scores = self.softmax(scores.view(batch_size,-1))
+        c = scores.log()
+        score =  c.gather(-1,topk_indices)
+        policy_score = score.mean(dim=1)
+        #we need to transpose the output
+        return out.transpose(1,2),policy_score

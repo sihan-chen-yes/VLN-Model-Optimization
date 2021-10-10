@@ -355,6 +355,7 @@ class Seq2SeqAgent(BaseAgent):
         rewards = []
         hidden_states = []
         policy_log_probs = []
+        policy_score_probs = []
         masks = []
         entropys = []
         ml_loss = 0.
@@ -371,13 +372,14 @@ class Seq2SeqAgent(BaseAgent):
                 cand_visual_feat *= noise
                 near_visual_feat *= noise
 
-            h_t, c_t, logit, h1 = self.decoder(input_a_t, f_t, 
+            h_t, c_t, logit, h1,score_policy = self.decoder(input_a_t, f_t, 
                                                cand_visual_feat, cand_angle_feat, cand_obj_feat,
                                                near_visual_mask, near_visual_feat, near_angle_feat,
                                                near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat,
                                                h_t, h1, c_t,
                                                ctx, ctx_mask,
                                                already_dropfeat=(speaker is not None))
+            policy_score_probs.append(score_policy)
             hidden_states.append(h_t)
 
             # Mask outputs where agent can't move forward
@@ -486,7 +488,7 @@ class Seq2SeqAgent(BaseAgent):
                 cand_visual_feat *= noise
                 near_visual_feat *= noise
 
-            last_h_, _, _, _ = self.decoder(input_a_t, f_t,
+            last_h_, _, _, _, _ = self.decoder(input_a_t, f_t,
                                             cand_visual_feat, cand_angle_feat, cand_obj_feat,
                                             near_visual_mask, near_visual_feat, near_angle_feat,
                                             near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,  
@@ -515,6 +517,7 @@ class Seq2SeqAgent(BaseAgent):
 
                 # r_: The higher, the better. -ln(p(action)) * (discount_reward - value)
                 rl_loss += (-policy_log_probs[t] * a_ * mask_).sum()
+                rl_loss +=(-policy_score_probs[t]*a_*mask_).sum()
                 rl_loss += (((r_ - v_) ** 2) * mask_).sum() * 0.5     # 1/2 L2 loss
                 if self.feedback == 'sample':
                     rl_loss += (- 0.01 * entropys[t] * mask_).sum()
@@ -522,7 +525,6 @@ class Seq2SeqAgent(BaseAgent):
 
                 total = total + np.sum(masks[t])
             self.logs['total'].append(total)
-
             # Normalize the loss function
             if args.normalize_loss == 'total':
                 rl_loss /= total
