@@ -256,7 +256,7 @@ class ASODecoderLSTM(nn.Module):
             adj_list = self.compute_adj_list(near_id_feat)
         mask = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1]).cuda()
         object_graph_feat = self.object_mapping(object_graph_feat)
-        node_feats,score_policy = self.egcn(adj_list,object_graph_feat,mask,prev_h1)
+        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,mask,prev_h1)
         node_feats = self.object_mapping_out(node_feats)
         prev_h1_drop = self.drop(prev_h1)
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
@@ -296,7 +296,7 @@ class ASODecoderLSTM(nn.Module):
         logit = torch.matmul(logit, fusion_weight.unsqueeze(2)).squeeze(2)
         h_tilde = (h_a + h_s + h_o) / 3.
 
-        return h_1, c_1, logit, h_tilde,score_policy
+        return h_1, c_1, logit, h_tilde,score_policy,scorer,entropy_object
 
 class Critic(nn.Module):
     def __init__(self):
@@ -310,6 +310,20 @@ class Critic(nn.Module):
 
     def forward(self, state):
         return self.state2value(state).squeeze()
+
+class Critic_object(nn.Module):
+    def __init__(self):
+        super(Critic_object, self).__init__()
+        self.state2value = nn.Sequential(
+            nn.Linear(args.gcn_dim, args.gcn_dim),
+            nn.ReLU(),
+            nn.Dropout(args.dropout),
+            nn.Linear(args.gcn_dim, 1),
+        )
+
+    def forward(self, state):
+        return self.state2value(state).squeeze()
+
 
 class SpeakerEncoder(nn.Module):
     def __init__(self, feature_size, hidden_size, dropout_ratio, bidirectional):

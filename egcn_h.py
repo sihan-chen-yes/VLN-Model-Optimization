@@ -109,7 +109,7 @@ class GRCU_Cell(torch.nn.Module):
             #first evolve the weights from the initial and use the new weights with the node_embs
         policy_score = None
         if self.GCN_pre_weights is not None:
-            GCN_weights,policy_score = self.evolve_weights(self.GCN_pre_weights,node_embs,mask,ht)
+            GCN_weights,policy_score,scorer,entropy_object = self.evolve_weights(self.GCN_pre_weights,node_embs,mask,ht)
             node_embs = self.activation(Ahat.matmul(node_embs.matmul(GCN_weights)))
             if args.static_gcn_weights:
                 node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
@@ -118,8 +118,7 @@ class GRCU_Cell(torch.nn.Module):
                 node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
                 node_embs = node_embs1
             self.GCN_pre_weights = GCN_weights
-        return node_embs,policy_score        
-
+        return node_embs,policy_score,scorer,entropy_object
 class mat_GRU_cell(torch.nn.Module):
     def __init__(self,args):
         super().__init__()
@@ -143,7 +142,7 @@ class mat_GRU_cell(torch.nn.Module):
     def forward(self,prev_Q,prev_Z,mask,ht):
 
 
-        z_topk,policy_score = self.choose_topk(prev_Z,mask,ht)
+        z_topk,policy_score,scorer,entropy_object = self.choose_topk(prev_Z,mask,ht)
         update = self.update(z_topk,prev_Q)
         reset = self.reset(z_topk,prev_Q)
 
@@ -152,7 +151,7 @@ class mat_GRU_cell(torch.nn.Module):
 
         new_Q = (1 - update) * prev_Q + update * h_cap
 
-        return new_Q,policy_score
+        return new_Q,policy_score,scorer,entropy_object
 
         
 
@@ -221,7 +220,7 @@ class TopK_with_h(torch.nn.Module):
         return None
     def forward(self,node_embs,mask,h_t = None):
         batch_size,graph_size,feat_size = node_embs.shape
-        scorer = self.mapper(h_t)
+        scorer = self.mapper(h_t.detach())
         scores = node_embs.bmm(scorer.unsqueeze(-1)).squeeze()/scorer.norm(dim=1).unsqueeze(-1)
         scores = scores.squeeze() + mask
         vals, topk_indices = scores.view(batch_size,-1).topk(self.k,dim=1)
@@ -235,8 +234,9 @@ class TopK_with_h(torch.nn.Module):
             node_embs = node_embs.to_dense()
         out = node_embs.gather(1,topk_indices.unsqueeze(-1).expand(-1,-1,feat_size)) * tanh(scores.gather(1,topk_indices)).unsqueeze(-1)
         scores = self.softmax(scores.view(batch_size,-1))
+        entropy_object = torch.distributions.Categorical(scores).entropy()
         c = scores.log()
         score =  c.gather(-1,topk_indices)
         policy_score = score.mean(dim=1)
         #we need to transpose the output
-        return out.transpose(1,2),policy_score
+        return out.transpose(1,2),policy_score,scorer,entropy_object

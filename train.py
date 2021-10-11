@@ -209,6 +209,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
         print(loss_str,file=DEBUG_FILE)
         if iter%2000 == 0:
             print("BEST RESULT TILL NOW")
+            print("BEST RESULT TILL NOW",file=DEBUG_FILE)
             for env_name in best_val:
                 print(env_name, best_val[env_name]['state'])
 

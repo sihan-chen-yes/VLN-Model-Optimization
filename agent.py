@@ -107,11 +107,12 @@ class Seq2SeqAgent(BaseAgent):
         self.decoder = model.ASODecoderLSTM(args.aemb, args.rnn_dim, args.dropout).cuda()
         self.critic = model.Critic().cuda()
         self.models = (self.encoder, self.decoder, self.critic)
-
+        self.critic_object = model.Critic_object().cuda()
         # Optimizers
         self.encoder_optimizer = args.optimizer(self.encoder.parameters(), lr=args.lr)
         self.decoder_optimizer = args.optimizer(self.decoder.parameters(), lr=args.lr)
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
+        self.critic_object_optimizer = args.optimizer(self.critic_object.parameters(), lr=args.lr)
         self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer)
 
         # Evaluations
@@ -359,7 +360,8 @@ class Seq2SeqAgent(BaseAgent):
         masks = []
         entropys = []
         ml_loss = 0.
-
+        scorers = []
+        entropys_object = []
         h1 = h_t
         input_a_t = torch.zeros([len(obs), args.angle_feat_size]).cuda()
         for t in range(self.episode_len):
@@ -372,7 +374,7 @@ class Seq2SeqAgent(BaseAgent):
                 cand_visual_feat *= noise
                 near_visual_feat *= noise
 
-            h_t, c_t, logit, h1,score_policy = self.decoder(input_a_t, f_t, 
+            h_t, c_t, logit, h1,score_policy,scorer,entropy_object = self.decoder(input_a_t, f_t, 
                                                cand_visual_feat, cand_angle_feat, cand_obj_feat,
                                                near_visual_mask, near_visual_feat, near_angle_feat,
                                                near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat,
@@ -381,7 +383,8 @@ class Seq2SeqAgent(BaseAgent):
                                                already_dropfeat=(speaker is not None))
             policy_score_probs.append(score_policy)
             hidden_states.append(h_t)
-
+            scorers.append(scorer)
+            entropys_object.append(entropy_object)
             # Mask outputs where agent can't move forward
             # Here the logit is [b, max_candidate]
             candidate_mask = utils.length2mask(cand_leng)
@@ -488,7 +491,7 @@ class Seq2SeqAgent(BaseAgent):
                 cand_visual_feat *= noise
                 near_visual_feat *= noise
 
-            last_h_, _, _, _, _ = self.decoder(input_a_t, f_t,
+            last_h_, _, _, _, _,scorer,_ = self.decoder(input_a_t, f_t,
                                             cand_visual_feat, cand_angle_feat, cand_obj_feat,
                                             near_visual_mask, near_visual_feat, near_angle_feat,
                                             near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,  
@@ -496,31 +499,38 @@ class Seq2SeqAgent(BaseAgent):
                                             ctx, ctx_mask,
                                             already_dropfeat=(speaker is not None))
             rl_loss = 0.
-
             # NOW, A2C!!!
             # Calculate the final discounted reward
             last_value__ = self.critic(last_h_).detach()    # The value esti of the last state, remove the grad for safety
+            last_value_object = self.critic_object(scorer).detach()
             discount_reward = np.zeros(batch_size, np.float32)  # The inital reward is zero
+            discount_reward_object = np.zeros(batch_size, np.float32)
             for i in range(batch_size):
                 if not ended[i]:        # If the action is not ended, use the value function as the last reward
                     discount_reward[i] = last_value__[i]
-
+                    discount_reward_object[i] = last_value_object[i]
             length = len(rewards)
             total = 0
             for t in range(length-1, -1, -1):
                 discount_reward = discount_reward * args.gamma + rewards[t]   # If it ended, the reward will be 0
+                discount_reward_object = discount_reward_object *args.gamma + rewards[t]
                 mask_ = Variable(torch.from_numpy(masks[t]), requires_grad=False).cuda()
                 clip_reward = discount_reward.copy()
+                clip_reward_object = discount_reward_object.copy()
                 r_ = Variable(torch.from_numpy(clip_reward), requires_grad=False).cuda()
+                r_object = Variable(torch.from_numpy(clip_reward_object),requires_grad=False).cuda()
                 v_ = self.critic(hidden_states[t])
+                v_object = self.critic_object(scorers[t])
                 a_ = (r_ - v_).detach()
-
+                a_object = (r_object -v_object).detach()
                 # r_: The higher, the better. -ln(p(action)) * (discount_reward - value)
-                rl_loss += (-policy_log_probs[t] * a_ * mask_).sum()
-                rl_loss +=(-policy_score_probs[t]*a_*mask_).sum()
-                rl_loss += (((r_ - v_) ** 2) * mask_).sum() * 0.5     # 1/2 L2 loss
+                rl_loss +=0.8*(-policy_log_probs[t] * a_ * mask_).sum()
+                rl_loss +=0.2*(-policy_score_probs[t]*a_object*mask_).sum()
+                rl_loss +=0.8*(((r_ - v_) ** 2) * mask_).sum() * 0.5     # 1/2 L2 loss
+                rl_loss +=0.2*(((r_object - v_object)**2)*mask_).sum()*0.5
                 if self.feedback == 'sample':
-                    rl_loss += (- 0.01 * entropys[t] * mask_).sum()
+                    rl_loss += (-0.01 * entropys[t] * mask_).sum()
+                    rl_loss += (-0.01 *entropys_object[t] *mask_).sum()
                 self.logs['critic_loss'].append((((r_ - v_) ** 2) * mask_).sum().item())
 
                 total = total + np.sum(masks[t])
