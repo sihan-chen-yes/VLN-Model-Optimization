@@ -13,7 +13,7 @@ import utils
 from env import R2RBatch
 from agent import Seq2SeqAgent
 from eval import Evaluation
-from param import args
+from param import args,DEBUG_FILE
 
 import time
 import warnings
@@ -202,8 +202,11 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
 
         print(('%s (%d %d%%)' % (timeSince(start, float(iter)/n_iters),
                                                 iter, float(iter)/n_iters*100)))
+                                                
+        print(('%s (%d %d%%)' % (timeSince(start, float(iter)/n_iters),
+                                                iter, float(iter)/n_iters*100)),file=DEBUG_FILE)
         print(loss_str)
-
+        print(loss_str,file=DEBUG_FILE)
         if iter%2000 == 0:
             print("BEST RESULT TILL NOW")
             for env_name in best_val:
