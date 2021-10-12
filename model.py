@@ -180,7 +180,7 @@ class ASODecoderLSTM(nn.Module):
         self.drop = nn.Dropout(p=dropout_ratio)
         self.drop_env = nn.Dropout(p=args.featdropout)
         self.feat_att_layer = SoftDotAttention(hidden_size, args.visual_feat_size+args.angle_feat_size)
-        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size+args.glove_dim, hidden_size)
+        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size, hidden_size)
 
         self.action_att_layer = SoftDotAttention(hidden_size, hidden_size)
         self.subject_att_layer = SoftDotAttention(hidden_size, hidden_size)
@@ -198,6 +198,7 @@ class ASODecoderLSTM(nn.Module):
         self.object_graph_att = SoftDotAttention(hidden_size,args.glove_dim)
         self.object_mapping = nn.Sequential(nn.Linear(args.in_feats,args.gcn_dim),nn.Tanh())
         self.object_mapping_out = nn.Sequential(nn.Linear(args.gcn_dim,args.out_feats),nn.Tanh())
+        self.lstm_out_mapping = nn.Sequential(nn.Linear(args.glove_dim+hidden_size,hidden_size),nn.Tanh())
         if args.egcn_activation == 'relu':
             activation = torch.nn.RReLU()
         self.egcn = GRCU_Cell(args,activation)
@@ -260,11 +261,12 @@ class ASODecoderLSTM(nn.Module):
         node_feats = self.object_mapping_out(node_feats)
         prev_h1_drop = self.drop(prev_h1)
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
-        node_feat, _ = self.object_graph_att(prev_h1_drop,node_feats, output_tilde=False)
-        concat_input = torch.cat((action_embeds, attn_feat,node_feat), dim=-1)
+       
+        concat_input = torch.cat((action_embeds, attn_feat), dim=-1)
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
         h_1_drop = self.drop(h_1)
-
+        node_feat, _ = self.object_graph_att(h_1_drop,node_feats, output_tilde=False)
+        h_1_drop =self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)
         h_o, u_o, _ = self.object_att_layer(h_1_drop, ctx, ctx_mask)

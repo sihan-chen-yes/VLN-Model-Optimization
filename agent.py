@@ -21,7 +21,6 @@ import param
 from param import args
 from collections import defaultdict
 
-
 class BaseAgent(object):
     ''' Base class for an R2R agent to generate and save trajectories. '''
 
