@@ -218,9 +218,9 @@ class ASODecoderLSTM(nn.Module):
             weight = 1/torch.exp(torch.abs(6-norm_target).type(dtype=torch.float32))
         else:
             weight = 1/(torch.abs(6-norm_target).type(dtype=torch.float32)+1)
-        di = weight.sum(dim=1)
-        di = di.pow(-1/2)
-        weight = di.unsqueeze(1)*weight*di.unsqueeze(-1).detach()
+        # di = weight.sum(dim=1)
+        # di = di.pow(-1/2)
+        # weight = di.unsqueeze(1)*weight*di.unsqueeze(-1).detach()
         return weight
 
     def forward(self, action, feature,

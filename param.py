@@ -93,7 +93,7 @@ class Param:
         #debug
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)
-
+        self.parser.add_argument("--gcn_topk",type=int,default=5)
         # A2C
         self.parser.add_argument("--gamma", default=0.9, type=float)
         self.parser.add_argument("--normalize", dest="normalize_loss", default="total", type=str, help='batch or total')

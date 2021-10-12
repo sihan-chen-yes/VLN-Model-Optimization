@@ -109,7 +109,13 @@ class GRCU_Cell(torch.nn.Module):
             #first evolve the weights from the initial and use the new weights with the node_embs
         policy_score = None
         if self.GCN_pre_weights is not None:
-            GCN_weights,policy_score,scorer,entropy_object = self.evolve_weights(self.GCN_pre_weights,node_embs,mask,ht)
+            GCN_weights,policy_score,scorer,entropy_object,selected_indexes = self.evolve_weights(self.GCN_pre_weights,node_embs,mask,ht)
+            node_embs = node_embs.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,node_embs.shape[-1]))
+            Ahat = Ahat.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,Ahat.shape[-1]))
+            Ahat = Ahat.gather(2,selected_indexes.unsqueeze(1).expand(-1,Ahat.shape[1],-1))
+            di = Ahat.sum(dim=1)
+            di = di.pow(-1/2)
+            Ahat =  di.unsqueeze(1)*Ahat*di.unsqueeze(-1).detach()
             node_embs = self.activation(Ahat.matmul(node_embs.matmul(GCN_weights)))
             if args.static_gcn_weights:
                 node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
@@ -120,19 +126,19 @@ class GRCU_Cell(torch.nn.Module):
             self.GCN_pre_weights = GCN_weights
         return node_embs,policy_score,scorer,entropy_object
 class mat_GRU_cell(torch.nn.Module):
-    def __init__(self,args):
+    def __init__(self,args1):
         super().__init__()
-        self.args = args
-        self.update = mat_GRU_gate(args.rows,
-                                   args.cols,
+        self.args = args1
+        self.update = mat_GRU_gate(args1.rows,
+                                   args1.cols,
                                    torch.nn.Sigmoid())
 
-        self.reset = mat_GRU_gate(args.rows,
-                                   args.cols,
+        self.reset = mat_GRU_gate(args1.rows,
+                                   args1.cols,
                                    torch.nn.Sigmoid())
 
-        self.htilda = mat_GRU_gate(args.rows,
-                                   args.cols,
+        self.htilda = mat_GRU_gate(args1.rows,
+                                   args1.cols,
                                    torch.nn.Tanh())
         
         # self.choose_topk = TopK(feats = args.rows,
@@ -142,7 +148,7 @@ class mat_GRU_cell(torch.nn.Module):
     def forward(self,prev_Q,prev_Z,mask,ht):
 
 
-        z_topk,policy_score,scorer,entropy_object = self.choose_topk(prev_Z,mask,ht)
+        z_topk,policy_score,scorer,entropy_object,topk_indices_out = self.choose_topk(prev_Z,mask,ht)
         update = self.update(z_topk,prev_Q)
         reset = self.reset(z_topk,prev_Q)
 
@@ -151,7 +157,7 @@ class mat_GRU_cell(torch.nn.Module):
 
         new_Q = (1 - update) * prev_Q + update * h_cap
 
-        return new_Q,policy_score,scorer,entropy_object
+        return new_Q,policy_score,scorer,entropy_object,topk_indices_out
 
         
 
@@ -215,7 +221,7 @@ class TopK_with_h(torch.nn.Module):
         super().__init__()
         self.mapper =  nn.Sequential(nn.Linear(args.rnn_dim,args.gcn_dim),nn.Tanh())
         self.softmax = nn.Softmax()
-        self.k = args.gcn_dim
+        self.k = args.gcn_topk
     def reset_param(self,t):
         return None
     def forward(self,node_embs,mask,h_t = None):
@@ -224,9 +230,12 @@ class TopK_with_h(torch.nn.Module):
         scores = node_embs.bmm(scorer.unsqueeze(-1)).squeeze()/scorer.norm(dim=1).unsqueeze(-1)
         scores = scores.squeeze() + mask
         vals, topk_indices = scores.view(batch_size,-1).topk(self.k,dim=1)
-        topk_indices = topk_indices[vals > -float("Inf")].view(batch_size,-1)
-        if topk_indices.size(1) < self.k:
-            topk_indices = u.pad_with_last_val(topk_indices,self.k)
+        topk_indices_out = topk_indices[vals > -float("Inf")].view(batch_size,-1)
+        # if topk_indices.size(1) < self.k:
+        #     topk_indices = u.pad_with_last_val(topk_indices,self.k)
+        repeat_num = args.gcn_dim / self.k + 1
+        topk_indices = topk_indices.repeat(1,int(repeat_num))[:,:args.gcn_dim]
+        tanh = torch.nn.Tanh()
         tanh = torch.nn.Tanh()
 
         if isinstance(node_embs, torch.sparse.FloatTensor) or \
@@ -239,4 +248,4 @@ class TopK_with_h(torch.nn.Module):
         score =  c.gather(-1,topk_indices)
         policy_score = score.mean(dim=1)
         #we need to transpose the output
-        return out.transpose(1,2),policy_score,scorer,entropy_object
+        return out.transpose(1,2),policy_score,scorer,entropy_object,topk_indices_out
