@@ -1,10 +1,10 @@
-name=debug
+name=out-with-topk-selector-from-h_t-wo-rl
 flag="--attn soft --train listener
       --featdropout 0.3
       --visual_feat --angle_feat
       --feedback sample
       --mlWeight 0.2
-      --features places365 --static_gcn_weights --train_sub --debug
+      --features places365 --static_gcn_weights --train_sub
       --glove_dim 300 --top_N_obj 8 --distance_decay_function None 
       --subout max --dropout 0.5 --optim rms --lr 1e-4 --iters 23000 --maxAction 20"
 mkdir -p snap/$name
