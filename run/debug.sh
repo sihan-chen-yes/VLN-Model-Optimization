@@ -1,4 +1,4 @@
-name=out-with-topk-selector-from-h_t-wo-rl
+name=language-select-att-top5-wo-rl
 flag="--attn soft --train listener
       --featdropout 0.3
       --visual_feat --angle_feat

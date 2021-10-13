@@ -186,7 +186,7 @@ class ASODecoderLSTM(nn.Module):
         self.subject_att_layer = SoftDotAttention(hidden_size, hidden_size)
         self.object_att_layer = SoftDotAttention(hidden_size, hidden_size)
         self.graph_att_layer = SoftDotAttention(hidden_size,hidden_size)
-
+        self.topk_att_layer = SoftDotAttention(hidden_size,hidden_size)
         self.fuse_a = nn.Linear(hidden_size, 1)
         self.fuse_s = nn.Linear(hidden_size, 1)
         self.fuse_o = nn.Linear(hidden_size, 1)
@@ -262,9 +262,10 @@ class ASODecoderLSTM(nn.Module):
        
         concat_input = torch.cat((action_embeds, attn_feat), dim=-1)
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
-        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,mask,h_1)
-        node_feats = self.object_mapping_out(node_feats)
         h_1_drop = self.drop(h_1)
+        selector,_, _ = self.topk_att_layer(h_1_drop,ctx,ctx_mask)
+        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,mask,selector)
+        node_feats = self.object_mapping_out(node_feats)
         node_feat, _ = self.object_graph_att(h_1_drop,node_feats, output_tilde=False)
         h_1_drop =self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
