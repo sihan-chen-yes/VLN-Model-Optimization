@@ -228,7 +228,7 @@ class TopK_with_h(torch.nn.Module):
         batch_size,graph_size,feat_size = node_embs.shape
         scorer = self.mapper(h_t.detach())
         scores = node_embs.bmm(scorer.unsqueeze(-1)).squeeze()/scorer.norm(dim=1).unsqueeze(-1)
-        scores = scores.squeeze() + mask
+        scores = scores.squeeze()
         vals, topk_indices = scores.view(batch_size,-1).topk(self.k,dim=1)
         topk_indices_out = topk_indices[vals > -float("Inf")].view(batch_size,-1)
         # if topk_indices.size(1) < self.k:
