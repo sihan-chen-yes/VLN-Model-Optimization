@@ -7,7 +7,7 @@ from torch.nn.modules import activation
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from param import args
 from egcn_h import GRCU_Cell
-
+import math
 class ObjEncoder(nn.Module):
     ''' Encodes object labels using GloVe. '''
 
@@ -191,6 +191,7 @@ class ASODecoderLSTM(nn.Module):
         self.fuse_s = nn.Linear(hidden_size, 1)
         self.fuse_o = nn.Linear(hidden_size, 1)
         self.static_weights = nn.Parameter(torch.Tensor(args.gcn_dim,args.gcn_dim))
+        self.reset_param(self.static_weights)
         self.value_action = nn.Sequential(nn.Linear(args.angle_feat_size, hidden_size), nn.Tanh())
         self.subject_att = ScaledSoftDotAttention(args.angle_feat_size, args.angle_feat_size, args.visual_feat_size, hidden_size)    
         self.object_att = ScaledSoftDotAttention(hidden_size, args.glove_dim+args.angle_feat_size, args.glove_dim+args.angle_feat_size, 
@@ -207,7 +208,10 @@ class ASODecoderLSTM(nn.Module):
         self.cand_att_a = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_s = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_o = SoftDotAttention(hidden_size, hidden_size)
-        
+    def reset_param(self,t):
+        #Initialize based on the number of columns
+        stdv = 1. / math.sqrt(t.size(1))
+        t.data.uniform_(-stdv,stdv)    
     def compute_adj_list(self,near_id_feat):
         current_list = near_id_feat.unsqueeze(-1).expand(-1,-1,near_id_feat.shape[1])
         target_list = near_id_feat.unsqueeze(1).expand(-1,near_id_feat.shape[1],-1)
@@ -260,10 +264,8 @@ class ASODecoderLSTM(nn.Module):
         object_graph_feat = self.object_mapping(object_graph_feat)
         prev_h1_drop = self.drop(prev_h1)
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
-       
         node_embs = self.activation(adj_list.matmul(object_graph_feat.matmul(self.static_weights)))
-        node_feat,_ = self.object_graph_att_in(prev_h1,node_embs,output_tilde=False)
-        import ipdb;ipdb.set_trace()
+        node_feat,_ = self.object_graph_att_in(prev_h1,object_graph_feat,output_tilde=False)
         concat_input = torch.cat((action_embeds, attn_feat, node_feat), dim=-1)
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
         h_1_drop = self.drop(h_1)
