@@ -1,12 +1,11 @@
-name=language-select-att-top50-wo-rl-full-dataset-same-exp-b100
+name=debug
 flag="--attn soft --train listener
       --featdropout 0.3
       --visual_feat --angle_feat
       --feedback sample
       --mlWeight 0.2
-      --features places365 --static_gcn_weights --gcn_topk 50
-      --batchSize 100
-      --glove_dim 300 --top_N_obj 8 --distance_decay_function same 
+      --features places365 --static_gcn_weights --gcn_topk 5
+      --glove_dim 300 --top_N_obj 8 --distance_decay_function same --debug
       --subout max --dropout 0.5 --optim rms --lr 1e-4 --iters 80000 --maxAction 20"
 mkdir -p snap/$name
 CUDA_VISIBLE_DEVICES=$1 python3 methods/nvem/train.py $flag --name $name 
