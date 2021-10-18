@@ -225,7 +225,7 @@ class ASODecoderLSTM(nn.Module):
             weight = 1/(torch.abs(6-norm_target).type(dtype=torch.float32)+1)
         # di = weight.sum(dim=1)
         # di = di.pow(-1/2)
-        # weight = di.unsqueeze(1)*weight*di.unsqueeze(-1).detach()
+        # weight = di.unsqueeze(1)*weight*di.unsqueeze(-1)
         return weight
 
     def forward(self, action, feature,
@@ -264,7 +264,10 @@ class ASODecoderLSTM(nn.Module):
         object_graph_feat = self.object_mapping(object_graph_feat)
         prev_h1_drop = self.drop(prev_h1)
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
-        node_embs = self.activation(adj_list.matmul(object_graph_feat.matmul(self.static_weights)))
+        di = adj_list.sum(dim=1)
+        di = di.pow(-1/2)
+        weight = di.unsqueeze(1)*adj_list*di.unsqueeze(-1)
+        node_embs = self.activation(weight.matmul(object_graph_feat.matmul(self.static_weights)))
         node_feat,_ = self.object_graph_att_in(prev_h1,node_embs,output_tilde=False)
         concat_input = torch.cat((action_embeds, attn_feat, node_feat), dim=-1)
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
