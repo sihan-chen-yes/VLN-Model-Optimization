@@ -265,7 +265,7 @@ class ASODecoderLSTM(nn.Module):
         prev_h1_drop = self.drop(prev_h1)
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
         node_embs = self.activation(adj_list.matmul(object_graph_feat.matmul(self.static_weights)))
-        node_feat,_ = self.object_graph_att_in(prev_h1,object_graph_feat,output_tilde=False)
+        node_feat,_ = self.object_graph_att_in(prev_h1,node_embs,output_tilde=False)
         concat_input = torch.cat((action_embeds, attn_feat, node_feat), dim=-1)
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
         h_1_drop = self.drop(h_1)
