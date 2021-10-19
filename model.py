@@ -134,7 +134,7 @@ class SoftDotAttention(nn.Module):
 
         if mask is not None:
             # -Inf masking prior to the softmax
-            attn.masked_fill_(mask, -float('inf'))
+            attn.masked_fill_(mask.bool(), -float('inf'))
         attn = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
         attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
 
@@ -168,7 +168,7 @@ class ScaledSoftDotAttention(nn.Module):
         v = self.linear_v(v_in)
         attn = torch.matmul(k, q.unsqueeze(3)).squeeze(3) * self.scale
         if mask is not None:
-            attn.masked_fill_(mask, -1e9)
+            attn.masked_fill_(mask.bool(), -1e9)
         attn = F.softmax(attn, dim=-1)
         v_out = torch.matmul(v.permute(0,1,3,2), attn.unsqueeze(3)).squeeze(3)
 
@@ -282,7 +282,8 @@ class ASODecoderLSTM(nn.Module):
         h_1_drop =self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)
-        h_s = (h_s + clip_language_feature)/2
+        if args.CLIP_language:
+            h_s = (h_s + clip_language_feature)/2
         h_o, u_o, _ = self.object_att_layer(h_1_drop, ctx, ctx_mask)
         h_a_drop, u_a_drop = self.drop(h_a), self.drop(u_a)
         h_s_drop, u_s_drop = self.drop(h_s), self.drop(u_s)
@@ -437,15 +438,16 @@ class SpeakerDecoder(nn.Module):
 
         return logit, h1, c1
     
-class CLIP_language(nn.Module):
+if args.CLIP_language:
+    import clip
+    class CLIP_language(nn.Module):
 
-    def __init__(self):
-        super().__init__()
-        import clip
-        self.model,preprocess = clip.load('RN101')
-    
-    def forward(self,text_list):
-        with torch.no_grad():
-            text = clip.tokenize(text_list).to(self.device)
-            text_features = self.model.encode_text(text)
-        return text_features
+        def __init__(self):
+            super().__init__()
+            self.model,preprocess = clip.load('RN101')
+        
+        def forward(self,text_list):
+            with torch.no_grad():
+                text = clip.tokenize(text_list,truncate=True).cuda()
+                text_features = self.model.encode_text(text)
+            return text_features

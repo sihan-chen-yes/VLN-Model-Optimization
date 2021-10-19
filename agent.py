@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+from ipdb.__main__ import set_trace
 import numpy as np
 import random
 import math
@@ -98,7 +99,8 @@ class Seq2SeqAgent(BaseAgent):
             obj_vocab = [k.strip() for k in f_ov.readlines()]
         obj_glove_matrix = utils.get_glove_matrix(obj_vocab, args.glove_dim)
         self.objencoder = model.ObjEncoder(obj_glove_matrix.shape[0], obj_glove_matrix.shape[1], obj_glove_matrix).cuda()
-        self.CLIP_language = model.CLIP_language()
+        if args.CLIP_language:
+            self.CLIP_language = model.CLIP_language()
         # Models
         enc_hidden_size = args.rnn_dim//2 if args.bidir else args.rnn_dim
         self.encoder = model.EncoderLSTM(tok.vocab_size(), args.wemb, enc_hidden_size, padding_idx,
@@ -332,8 +334,9 @@ class Seq2SeqAgent(BaseAgent):
         perm_obs = obs[perm_idx]
 
         ctx, h_t, c_t = self.encoder(seq, seq_lengths)
-        row_text= [x['instructions'] for x in perm_idx]
-        clip_language_feature = self.CLIP_language(row_text)
+        if args.CLIP_language:
+            row_text= [x['instructions'] for x in perm_obs]
+            clip_language_feature = self.CLIP_language(row_text)
         ctx_mask = seq_mask
         self.decoder.egcn.init_weights(h_t)
         # Record starting point
@@ -374,7 +377,6 @@ class Seq2SeqAgent(BaseAgent):
                 f_t[..., :-args.angle_feat_size] *= noise
                 cand_visual_feat *= noise
                 near_visual_feat *= noise
-
             h_t, c_t, logit, h1,score_policy,scorer,entropy_object = self.decoder(input_a_t, f_t, 
                                                cand_visual_feat, cand_angle_feat, cand_obj_feat,
                                                near_visual_mask, near_visual_feat, near_angle_feat,
@@ -497,7 +499,7 @@ class Seq2SeqAgent(BaseAgent):
                                             near_visual_mask, near_visual_feat, near_angle_feat,
                                             near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,  
                                             h_t, h1, c_t,
-                                            ctx, ctx_mask,
+                                            ctx, ctx_mask,clip_language_feature,
                                             already_dropfeat=(speaker is not None))
             rl_loss = 0.
             # NOW, A2C!!!
