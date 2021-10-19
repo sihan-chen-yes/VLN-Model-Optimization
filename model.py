@@ -1,4 +1,5 @@
 
+from numpy.core.fromnumeric import clip
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -38,7 +39,9 @@ class EncoderLSTM(nn.Module):
         self.num_directions = 2 if bidirectional else 1
         self.num_layers = num_layers
         self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx)
-        if glove is not None:
+        if args.CLIP_language:
+            None
+        elif glove is not None:
             print('Using glove word embedding')
             self.embedding.weight.data[...] = torch.from_numpy(glove)
             self.embedding.weight.requires_grad = False
@@ -231,9 +234,9 @@ class ASODecoderLSTM(nn.Module):
     def forward(self, action, feature,
                 cand_visual_feat, cand_angle_feat, cand_obj_feat,
                 near_visual_mask, near_visual_feat, near_angle_feat,
-                near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat, 
+                near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,
                 h_0, prev_h1, c_0,
-                ctx, ctx_mask=None,
+                ctx, ctx_mask=None,clip_language_feature=None,
                 already_dropfeat=False):
         action_embeds = self.action_embedding(action)
         action_embeds = self.drop(action_embeds)
@@ -279,6 +282,7 @@ class ASODecoderLSTM(nn.Module):
         h_1_drop =self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)
+        h_s = (h_s + clip_language_feature)/2
         h_o, u_o, _ = self.object_att_layer(h_1_drop, ctx, ctx_mask)
         h_a_drop, u_a_drop = self.drop(h_a), self.drop(u_a)
         h_s_drop, u_s_drop = self.drop(h_s), self.drop(u_s)
@@ -432,3 +436,16 @@ class SpeakerDecoder(nn.Module):
         logit = self.projection(x)
 
         return logit, h1, c1
+    
+class CLIP_language(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        import clip
+        self.model,preprocess = clip.load('RN101')
+    
+    def forward(self,text_list):
+        with torch.no_grad():
+            text = clip.tokenize(text_list).to(self.device)
+            text_features = self.model.encode_text(text)
+        return text_features
