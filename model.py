@@ -275,7 +275,7 @@ class ASODecoderLSTM(nn.Module):
         concat_input = torch.cat((action_embeds, attn_feat, node_feat), dim=-1)
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
         h_1_drop = self.drop(h_1)
-        object_h1_drop = h_1_drop.copy().detach()
+        object_h1_drop = h_1_drop.detach()
         object_ctx = ctx.detach()
         selector,_, _ = self.topk_att_layer(object_h1_drop,object_ctx,ctx_mask)
         node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,mask,selector)

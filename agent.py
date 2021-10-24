@@ -338,7 +338,7 @@ class Seq2SeqAgent(BaseAgent):
             row_text= [x['instructions'] for x in perm_obs]
             clip_language_feature = self.CLIP_language(row_text)
         ctx_mask = seq_mask
-        self.decoder.egcn.init_weights(h_t.copy().detach())
+        self.decoder.egcn.init_weights(h_t.detach())
         # Record starting point
         traj = [{
             'instr_id': ob['instr_id'],
