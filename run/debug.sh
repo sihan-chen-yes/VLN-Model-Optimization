@@ -1,4 +1,4 @@
-name=in-real-gcn-out-language-selector+clip-stop-g-from-main-lstm
+name=in-real-gcn-out-language-selector+clip-stop-g-from-main-lstm+reinfocement-learning
 flag="--attn soft --train listener
       --featdropout 0.3
       --visual_feat --angle_feat

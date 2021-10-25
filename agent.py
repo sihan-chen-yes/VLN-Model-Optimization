@@ -505,35 +505,35 @@ class Seq2SeqAgent(BaseAgent):
             # NOW, A2C!!!
             # Calculate the final discounted reward
             last_value__ = self.critic(last_h_).detach()    # The value esti of the last state, remove the grad for safety
-            # last_value_object = self.critic_object(scorer).detach()
+            last_value_object = self.critic_object(scorer).detach()
             discount_reward = np.zeros(batch_size, np.float32)  # The inital reward is zero
-            # discount_reward_object = np.zeros(batch_size, np.float32)
+            discount_reward_object = np.zeros(batch_size, np.float32)
             for i in range(batch_size):
                 if not ended[i]:        # If the action is not ended, use the value function as the last reward
                     discount_reward[i] = last_value__[i]
-                    # discount_reward_object[i] = last_value_object[i]
+                    discount_reward_object[i] = last_value_object[i]
             length = len(rewards)
             total = 0
             for t in range(length-1, -1, -1):
                 discount_reward = discount_reward * args.gamma + rewards[t]   # If it ended, the reward will be 0
-                #discount_reward_object = discount_reward_object *args.gamma + rewards[t]
+                discount_reward_object = discount_reward_object *args.gamma + rewards[t]
                 mask_ = Variable(torch.from_numpy(masks[t]), requires_grad=False).cuda()
                 clip_reward = discount_reward.copy()
-                # clip_reward_object = discount_reward_object.copy()
+                clip_reward_object = discount_reward_object.copy()
                 r_ = Variable(torch.from_numpy(clip_reward), requires_grad=False).cuda()
-                # r_object = Variable(torch.from_numpy(clip_reward_object),requires_grad=False).cuda()
+                r_object = Variable(torch.from_numpy(clip_reward_object),requires_grad=False).cuda()
                 v_ = self.critic(hidden_states[t])
-                # v_object = self.critic_object(scorers[t])
+                v_object = self.critic_object(scorers[t])
                 a_ = (r_ - v_).detach()
-                # a_object = (r_object -v_object).detach()
+                a_object = (r_object -v_object).detach()
                 # r_: The higher, the better. -ln(p(action)) * (discount_reward - value)
                 rl_loss +=(-policy_log_probs[t] * a_ * mask_).sum()
-                # rl_loss +=0.2*(-policy_score_probs[t]*a_object*mask_).sum()
+                rl_loss +=0.2*(-policy_score_probs[t]*a_object*mask_).sum()
                 rl_loss +=(((r_ - v_) ** 2) * mask_).sum() * 0.5     # 1/2 L2 loss
-                # rl_loss +=0.2*(((r_object - v_object)**2)*mask_).sum()*0.5
+                rl_loss +=0.2*(((r_object - v_object)**2)*mask_).sum()*0.5
                 if self.feedback == 'sample':
                     rl_loss += (-0.01 * entropys[t] * mask_).sum()
-                    # rl_loss += (-0.01 *entropys_object[t] *mask_).sum()
+                    rl_loss += (-0.01 *entropys_object[t] *mask_).sum()
                 self.logs['critic_loss'].append((((r_ - v_) ** 2) * mask_).sum().item())
 
                 total = total + np.sum(masks[t])
