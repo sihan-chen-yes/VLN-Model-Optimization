@@ -83,7 +83,7 @@ class Param:
         self.parser.add_argument("--angle_feat", dest="angle_feat", action="store_const", default=False, const=True)
         self.parser.add_argument("--angle_feat_size", dest="angle_feat_size", type=int, default=128)
         self.parser.add_argument("--visual_feat", dest="visual_feat", action="store_const", default=False, const=True)
-        self.parser.add_argument("--visual_feat_size", dest="visual_feat_size", type=int, default=2048)
+        self.parser.add_argument("--visual_feat_size", dest="visual_feat_size", type=int, default=512)
 
         self.parser.add_argument("--in_feats",type=int,default=428)
         self.parser.add_argument("--out_feats",type=int,default=300)

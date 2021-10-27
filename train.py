@@ -33,11 +33,13 @@ TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
 
 IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
 PLACE365_FEATURES = 'img_features/ResNet-152-places365.tsv'
-
+CLIP_FEATURES = 'img_features/CLIP-ViT-B-32-views.tsv'
 if args.features == 'imagenet':
     features = IMAGENET_FEATURES
 elif args.features == 'places365':
     features = PLACE365_FEATURES
+elif args.features == 'clip':
+    features = CLIP_FEATURES
 else:
     raise NotImplementedError
 
