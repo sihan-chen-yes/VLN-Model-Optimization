@@ -1,4 +1,4 @@
-name=in_static_out_dy_rl+clip.sh
+name=in_static_out_dy_rl+clip-valid
 flag="--attn soft --train listener
       --featdropout 0.3
       --visual_feat --angle_feat
