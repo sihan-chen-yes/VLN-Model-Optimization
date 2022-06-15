@@ -114,7 +114,7 @@ class Param:
         current_path = os.getcwd()
         git_path = os.path.dirname(__file__)
         import git
-        repo = git.Repo('./methods/nvem/')
+        repo = git.Repo('./methods/SEvol/')
         commit_hash = repo.head.object.hexsha
         self.args.commit_hash = commit_hash
         import json
