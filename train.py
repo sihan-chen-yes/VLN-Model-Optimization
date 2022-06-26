@@ -12,9 +12,12 @@ from utils import read_vocab,write_vocab,build_vocab,Tokenizer,padding_idx,timeS
 import utils
 from env import R2RBatch
 from agent import Seq2SeqAgent
-from eval import Evaluation
-from param import args,DEBUG_FILE
 
+from param import args,DEBUG_FILE
+if args.task=='R2R':
+    from eval import Evaluation
+elif args.task == 'REVERIE':
+    from eval_reverie import Evaluation
 import time
 import warnings
 warnings.filterwarnings("ignore")
@@ -22,7 +25,11 @@ import pickle as pkl
 
 from tensorboardX import SummaryWriter
 
+import nni
+from param import params
+
 #os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+
 
 log_dir = 'snap/%s' % args.name
 if not os.path.exists(log_dir):
@@ -127,12 +134,34 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
 
     start = time.time()
 
+    #building dict and init
+    metric_best_dict = {}
+    metric_cur_dict = {}
+    min_metric_list = ["nav_error", "oracle_error", "steps", "lengths"]
+    if args.task == "REVERIE":
+        metrics_list = ["lengths", "success_rate", "oracle_rate", "spl"]
+    elif args.task == "R2R":
+        metrics_list = ["nav_error", "oracle_error", "steps", "lengths", "success_rate", "oracle_rate", "spl"]
+    else:
+        print("task ERROR!")
+    for env_name in val_envs.keys():
+        for metric in metrics_list:
+            if metric in ["spl"] and env_name in ["val_unseen"]:
+                item_name = "default"
+            else:
+                item_name = "{}_{}".format(env_name, metric)
+            metric_cur_dict[item_name] = 0
+            if metric in min_metric_list:
+                metric_best_dict[item_name] = float('inf')
+            else:
+                metric_best_dict[item_name] = 0
+
     best_val = {'val_unseen': {"accu": 0., "state":"", 'update':False}}
     if args.fast_train:
         log_every = 40
     for idx in range(start_iter, start_iter+n_iters, log_every):
         listner.logs = defaultdict(list)
-        interval = min(log_every, n_iters-idx)
+        interval = min(log_every, start+n_iters-idx)
         iter = idx + interval
 
         t0 = time.time()
@@ -157,19 +186,20 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
         t1 = time.time()
         print('iter: {}, time: {:.3f}'.format(idx, t1 - t0))
 
-        # Log the training stats to tensorboard
-        total = max(sum(listner.logs['total']), 1) # total actions / interval / args.batch_size
+        #Log the training stats to tensorboard
+        total = max(sum(listner.logs['total']), 1) # total actions / interval / batch_size
         length = max(len(listner.logs['critic_loss']), 1) # max action length / interval
         critic_loss = sum(listner.logs['critic_loss']) / total #/ length / args.batchSize
         RL_loss = sum(listner.logs['RL_loss']) / max(len(listner.logs['RL_loss']), 1)
         IL_loss = sum(listner.logs['IL_loss']) / max(len(listner.logs['IL_loss']), 1)
-        entropy = sum(listner.logs['entropy']) / total #/ length / args.batchSize
+        entropy = sum(listner.logs['entropy']) / total #/ length / batchSize
         writer.add_scalar("loss/critic", critic_loss, idx)
         writer.add_scalar("loss/RL_loss", RL_loss, idx)
         writer.add_scalar("loss/IL_loss", IL_loss, idx)
         writer.add_scalar("policy_entropy", entropy, idx)
         writer.add_scalar("total_actions", total, idx)
         writer.add_scalar("max_length", length, idx)
+
         print("total_actions", total)
         print("max_length", length)
 
@@ -193,8 +223,25 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
                         if val > best_val[env_name]['accu']:
                             best_val[env_name]['accu'] = val
                             best_val[env_name]['update'] = True
+                if metric in ["spl"] and env_name in ["val_unseen"]:
+                    item_name = "default"
+                else:
+                    item_name = "{}_{}".format(env_name,metric)
+                metric_cur_dict[item_name] = val
+                if metric in min_metric_list:
+                    metric_best_dict[item_name] = val if val < metric_best_dict[item_name] \
+                        else metric_best_dict[item_name]
+                else:
+                    metric_best_dict[item_name] = val if val > metric_best_dict[item_name] \
+                        else metric_best_dict[item_name]
+                #for tensorboard log (splits)
+                title = '{}_{}'.format(env_name,metric)
+                writer.add_scalar(title, val, idx)
+
                 loss_str += ' %s: %.3f' % (metric, val)
             loss_str += '\n'
+
+        nni.report_intermediate_result(metric_cur_dict)
 
         for env_name in best_val:
             if best_val[env_name]['update']:
@@ -216,7 +263,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
                 print(env_name, best_val[env_name]['state'])
 
     listner.save(idx, os.path.join("snap", args.name, "state_dict", "LAST_iter%d" % (idx)))
-
+    nni.report_final_result(metric_best_dict)
 
 def valid(train_env, tok, val_envs={}):
     agent = Seq2SeqAgent(train_env, "", tok, args.maxAction)
@@ -275,13 +322,13 @@ def train_val():
         obj_dict = pkl.load(f)
     
     if args.debug:
-        train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
+        train_env = R2RBatch(feat_dict,obj_dict,batch_size=params['batchSize'],
                          splits=['val_unseen'], tokenizer=tok)
     elif args.train_sub:
-        train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
+        train_env = R2RBatch(feat_dict,obj_dict,batch_size=params['batchSize'],
                          splits=['train-sub'], tokenizer=tok)
     else:
-        train_env = R2RBatch(feat_dict,obj_dict,batch_size=args.batchSize,
+        train_env = R2RBatch(feat_dict,obj_dict,batch_size=params['batchSize'],
                             splits=['train'], tokenizer=tok)
     from collections import OrderedDict
 
@@ -298,7 +345,7 @@ def train_val():
 
     val_envs = OrderedDict(
         ((split,
-          (R2RBatch(feat_dict, obj_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok),
+          (R2RBatch(feat_dict, obj_dict, batch_size=params['batchSize'], splits=[split], tokenizer=tok),
            Evaluation([split], featurized_scans, tok))
           )
          for split in val_env_names
@@ -362,9 +409,9 @@ def train_val_augment():
     aug_path = args.aug
 
     # Create the training environment
-    train_env = R2RBatch(feat_dict, obj_dict, batch_size=args.batchSize,
+    train_env = R2RBatch(feat_dict, obj_dict, batch_size=params['batchSize'],
                          splits=['train'], tokenizer=tok)
-    aug_env   = R2RBatch(feat_dict, obj_dict, batch_size=args.batchSize,
+    aug_env   = R2RBatch(feat_dict, obj_dict, batch_size=params['batchSize'],
                          splits=[aug_path], tokenizer=tok, name='aug')
 
     # Printing out the statistics of the dataset
@@ -378,7 +425,7 @@ def train_val_augment():
     print("The average action length of the dataset is %0.4f." % (stats['path']))
 
     # Setup the validation data
-    val_envs = {split: (R2RBatch(feat_dict, obj_dict, batch_size=args.batchSize, splits=[split],
+    val_envs = {split: (R2RBatch(feat_dict, obj_dict, batch_size=params['batchSize'], splits=[split],
                                  tokenizer=tok), Evaluation([split], featurized_scans, tok))
                 for split in ['train', 'val_seen', 'val_unseen']}
 

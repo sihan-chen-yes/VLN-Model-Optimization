@@ -19,9 +19,14 @@ class ObjEncoder(nn.Module):
         self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx)
         self.embedding.weight.data[...] = torch.from_numpy(glove_matrix)
         self.embedding.weight.requires_grad = False
+        if args.obj_clip:
+            self.proj = nn.Linear(512,300)
 
     def forward(self, inputs):
-        embeds = self.embedding(inputs)
+        if args.obj_clip:
+            embeds = self.proj(self.embedding(inputs))
+        else:
+            embeds = self.embedding(inputs)
         return embeds
 
 class EncoderLSTM(nn.Module):
@@ -206,7 +211,11 @@ class ASODecoderLSTM(nn.Module):
         self.lstm_out_mapping = nn.Sequential(nn.Linear(args.glove_dim+hidden_size,hidden_size),nn.Tanh())
         if args.egcn_activation == 'relu':
             self.activation = torch.nn.RReLU()
+
+
+        #TODO
         self.egcn = GRCU_Cell(args, self.activation)
+
 #        cand attention layer
         self.cand_att_a = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_s = SoftDotAttention(hidden_size, hidden_size)
@@ -278,7 +287,9 @@ class ASODecoderLSTM(nn.Module):
         object_h1_drop = h_1_drop
         object_ctx = ctx.detach()
         selector,_, _ = self.topk_att_layer(object_h1_drop,object_ctx,ctx_mask)
+
         node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,mask,selector)
+
         node_feats = self.object_mapping_out(node_feats)
         node_feat, _ = self.object_graph_att(h_1_drop,node_feats, output_tilde=False)
         h_1_drop =self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))

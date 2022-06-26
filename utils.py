@@ -69,13 +69,22 @@ def load_datasets(splits):
         # Load Json
         # if split in ['train', 'val_seen', 'val_unseen', 'test',
         #              'val_unseen_half1', 'val_unseen_half2', 'val_seen_half1', 'val_seen_half2']:       # Add two halves for sanity check
-        if "/" not in split:
-            with open('tasks/R2R/data/R2R_%s.json' % split) as f:
-                new_data = json.load(f)
-        else:
-            with open(split) as f:
-                new_data = json.load(f)
-
+        if args.task =='R2R':
+            if "/" not in split:
+                with open('tasks/R2R/data/R2R_%s.json' % split) as f:
+                    new_data = json.load(f)
+            else:
+                with open(split) as f:
+                    new_data = json.load(f)
+        elif args.task == 'REVERIE':
+            print(f'load instruction from reverie {split}')
+            if "/" not in split:
+                with open('tasks/REVERIE/data/REVERIE_%s.json' % split) as f:
+                    new_data = json.load(f)
+                
+            else:
+                with open(split) as f:
+                    new_data = json.load(f)
         # Partition
         if number > 0:
             random.seed(0)              # Make the data deterministic, additive
@@ -531,7 +540,9 @@ class FloydGraph:
 def get_glove_matrix(index_to_word, vector_dim):
     ''' load GloVE '''
     glove_path = 'img_features/objects/glove.6B'
+    #400000 300
     vectors = bcolz.open(f'{glove_path}/6B.{vector_dim}.dat')[:]
+    #400000
     words = pickle.load(open(f'{glove_path}/6B.{vector_dim}_words.pkl', 'rb'))
     word2idx = pickle.load(open(f'{glove_path}/6B.{vector_dim}_idx.pkl', 'rb'))
 
@@ -553,6 +564,33 @@ def get_glove_matrix(index_to_word, vector_dim):
         else:
             try:
                 weights_matrix[i] = glove[word]
+            except KeyError:
+                raise KeyError
+
+    return weights_matrix
+
+def get_clip_matrix(index_to_word, vector_dim):
+    "load clip matrix"
+    #(101+2) x 512
+    with open('img_features/objects/obj_clip_dict.pkl', 'rb') as f:
+        clip = pickle.load(f)
+
+    ''' create the weight matrix '''
+    weights_matrix = np.zeros((len(index_to_word), vector_dim))
+
+    for i in range(len(index_to_word)):
+        word = index_to_word[i]
+        if word == 'others':
+            weights_matrix[i] = np.zeros((vector_dim,))
+        elif word == '<PAD>' or word == '<UNK>' or word == '<EOS>' or word == '<BOS>':
+            weights_matrix[i] = np.zeros((vector_dim,))
+        elif word == '..' or '. .':
+            weights_matrix[i] = clip['.']
+        elif word == 'forward':
+            weights_matrix[i] = clip['forward']
+        else:
+            try:
+                weights_matrix[i] = clip[word]
             except KeyError:
                 raise KeyError
 

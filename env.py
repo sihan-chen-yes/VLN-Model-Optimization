@@ -47,6 +47,7 @@ class EnvBatch():
             self.feature_size = 2048
         if args.debug:
             self.featurized_scans = set(json.load(open('./methods/neural_symbolic/debug_featurized_scans.json','r')))
+            self.feature_size = 512
         else:
             self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
         self.batch_size = batch_size
@@ -119,7 +120,11 @@ class R2RBatch():
                     if item['scan'] not in self.env.featurized_scans:   # For fast training
                         continue
                     new_item = dict(item)
-                    new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
+                    if args.task =='R2R':
+                        id_ = item['path_id']
+                    else:
+                        id_ = item['id']
+                    new_item['instr_id'] = '%s_%d' % (id_, j)
                     new_item['instructions'] = instr
                     if tokenizer:
                         new_item['instr_encoding'] = tokenizer.encode_sentence(instr)

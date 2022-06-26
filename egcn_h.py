@@ -5,7 +5,9 @@ import torch.nn as nn
 import math
 from param import args
 
+
 class EGCN(torch.nn.Module):
+    """SEM"""
     def __init__(self, args, activation, skipfeats=False):
         super().__init__()
         GRCU_args = u.Namespace({})

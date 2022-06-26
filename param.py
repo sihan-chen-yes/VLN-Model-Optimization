@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-
+import nni
 
 class Param:
     def __init__(self):
@@ -11,7 +11,7 @@ class Param:
         self.parser.add_argument('--iters', type=int, default=20000)
         self.parser.add_argument('--name', type=str, default='default')
         self.parser.add_argument('--train', type=str, default='speaker')
-
+        self.parser.add_argument('--task',type=str,default='R2R')
         # Data preparation
         self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
         self.parser.add_argument('--maxDecode', type=int, default=120, help="max input instruction")
@@ -95,15 +95,19 @@ class Param:
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)
         self.parser.add_argument("--gcn_topk",type=int,default=5)
+        self.parser.add_argument("--obj_clip", dest="obj_clip", action="store_true", default=False)
         # A2C
         self.parser.add_argument("--gamma", default=0.9, type=float)
         self.parser.add_argument("--normalize", dest="normalize_loss", default="total", type=str, help='batch or total')
 
         self.args = self.parser.parse_args()
         args = self.args
-        args.TRAIN_VOCAB = 'tasks/R2R/data/train_vocab.txt'
-        args.TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
-
+        if args.task == 'R2R':
+            args.TRAIN_VOCAB = 'tasks/R2R/data/train_vocab.txt'
+            args.TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
+        elif args.task== 'REVERIE':
+            args.TRAIN_VOCAB = 'tasks/REVERIE/REVERIE/train_vocab.txt'
+            args.TRAINVAL_VOCAB = 'tasks/REVERIE/REVERIE/train_vocab.txt'
         args.IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
         args.CANDIDATE_FEATURES = 'img_features/ResNet-152-candidate.tsv'
         args.features_fast = 'img_features/ResNet-152-imagenet-fast.tsv'
@@ -113,6 +117,7 @@ class Param:
             os.makedirs(args.log_dir)
         current_path = os.getcwd()
         git_path = os.path.dirname(__file__)
+        #TODO
         import git
         repo = git.Repo('./methods/SEvol/')
         commit_hash = repo.head.object.hexsha
@@ -143,3 +148,9 @@ param = Param()
 args = param.args
 DEBUG_FILE = open(os.path.join('snap', args.name, "debug.log"), 'w')
 
+params = {
+    'lr': args.lr,
+    'batchSize': args.batchSize,
+}
+optimized_params = nni.get_next_parameter()
+params.update(optimized_params)

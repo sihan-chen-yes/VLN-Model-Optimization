@@ -1,5 +1,5 @@
 name=train2-re
-flag="--attn soft --train listener
+flag="--attn soft --train listener --task REVERIE --batchSize 48
       --featdropout 0.3 --load snap/train2/state_dict/best_val_unseen
       --visual_feat --angle_feat
       --feedback sample

@@ -21,6 +21,8 @@ import model
 import param
 from param import args
 from collections import defaultdict
+import nni
+from param import params
 
 class BaseAgent(object):
     ''' Base class for an R2R agent to generate and save trajectories. '''
@@ -94,27 +96,37 @@ class Seq2SeqAgent(BaseAgent):
         self.episode_len = episode_len
         self.feature_size = self.env.feature_size
 
-        # glove encoder
-        with open('img_features/objects/object_vocab.txt', 'r') as f_ov:
-            obj_vocab = [k.strip() for k in f_ov.readlines()]
-        obj_glove_matrix = utils.get_glove_matrix(obj_vocab, args.glove_dim)
-        self.objencoder = model.ObjEncoder(obj_glove_matrix.shape[0], obj_glove_matrix.shape[1], obj_glove_matrix).cuda()
         if args.CLIP_language:
             self.CLIP_language = model.CLIP_language()
+        # objencoder
+        with open('img_features/objects/object_vocab.txt', 'r') as f_ov:
+            obj_vocab = [k.strip() for k in f_ov.readlines()]
+        if args.obj_clip:
+            obj_matrix = utils.get_clip_matrix(obj_vocab, 512)
+        else:
+            obj_matrix = utils.get_glove_matrix(obj_vocab, args.glove_dim)
         # Models
+        self.objencoder = model.ObjEncoder(obj_matrix.shape[0], obj_matrix.shape[1], obj_matrix).cuda()
         enc_hidden_size = args.rnn_dim//2 if args.bidir else args.rnn_dim
         self.encoder = model.EncoderLSTM(tok.vocab_size(), args.wemb, enc_hidden_size, padding_idx,
                                          args.dropout, bidirectional=args.bidir).cuda()
         self.decoder = model.ASODecoderLSTM(args.aemb, args.rnn_dim, args.dropout).cuda()
         self.critic = model.Critic().cuda()
-        self.models = (self.encoder, self.decoder, self.critic)
+        #TODO
+        self.models = (self.encoder, self.decoder, self.critic,self.objencoder)
+        #TODO
         self.critic_object = model.Critic_object().cuda()
+
         # Optimizers
-        self.encoder_optimizer = args.optimizer(self.encoder.parameters(), lr=args.lr)
-        self.decoder_optimizer = args.optimizer(self.decoder.parameters(), lr=args.lr)
-        self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
-        self.critic_object_optimizer = args.optimizer(self.critic_object.parameters(), lr=args.lr)
-        self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer)
+        self.encoder_optimizer = args.optimizer(self.encoder.parameters(), lr=params['lr'])
+        self.decoder_optimizer = args.optimizer(self.decoder.parameters(), lr=params['lr'])
+        self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=params['lr'])
+        #TODO
+        self.critic_object_optimizer = args.optimizer(self.critic_object.parameters(), lr=params['lr'])
+        self.objencoder_optimizer = args.optimizer(self.objencoder.parameters(),lr=args.lr)
+        #TODO
+        self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer,
+                           self.objencoder_optimizer)
 
         # Evaluations
         self.losses = []
@@ -565,13 +577,11 @@ class Seq2SeqAgent(BaseAgent):
         ''' Evaluate once on each instruction in the current environment '''
         self.feedback = feedback
         if use_dropout:
-            self.encoder.train()
-            self.decoder.train()
-            self.critic.train()
+            for model in self.models:
+                model.train()
         else:
-            self.encoder.eval()
-            self.decoder.eval()
-            self.critic.eval()
+            for model in self.models:
+                model.eval()
         super(Seq2SeqAgent, self).test(iters)
 
     def zero_grad(self):
@@ -599,24 +609,20 @@ class Seq2SeqAgent(BaseAgent):
         torch.nn.utils.clip_grad_norm(self.encoder.parameters(), 40.)
         torch.nn.utils.clip_grad_norm(self.decoder.parameters(), 40.)
 
-        self.encoder_optimizer.step()
-        self.decoder_optimizer.step()
-        self.critic_optimizer.step()
+        for optimizer in self.optimizer:
+            optimizer.step()
 
     def train(self, n_iters, feedback='teacher', **kwargs):
         ''' Train for a given number of iterations '''
         self.feedback = feedback
 
-        self.encoder.train()
-        self.decoder.train()
-        self.critic.train()
+        for model in self.models:
+            model.train()
 
         self.losses = []
         for iter in range(1, n_iters + 1):
-
-            self.encoder_optimizer.zero_grad()
-            self.decoder_optimizer.zero_grad()
-            self.critic_optimizer.zero_grad()
+            for optimizer in self.optimizers:
+                optimizer.zero_grad()
 
             self.loss = 0
             if feedback == 'teacher':
@@ -636,9 +642,8 @@ class Seq2SeqAgent(BaseAgent):
             torch.nn.utils.clip_grad_norm(self.encoder.parameters(), 40.)
             torch.nn.utils.clip_grad_norm(self.decoder.parameters(), 40.)
 
-            self.encoder_optimizer.step()
-            self.decoder_optimizer.step()
-            self.critic_optimizer.step()
+            for optimizer in self.optimizers:
+                optimizer.step()
 
             if args.aug is None:
                 utils.print_progress(iter, n_iters+1, prefix='Progress:', suffix='Complete', bar_length=50)
@@ -654,9 +659,13 @@ class Seq2SeqAgent(BaseAgent):
                 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
             }
-        all_tuple = [("encoder", self.encoder, self.encoder_optimizer),
-                     ("decoder", self.decoder, self.decoder_optimizer),
-                     ("critic", self.critic, self.critic_optimizer)]
+        all_tuple = [
+            ("encoder",self.encoder,self.encoder_optimizer),
+            ("decoder",self.decoder,self.decoder_optimizer),
+            ("critic",self.critic,self.critic_optimizer),
+            # ("critic_object",self.critic_object,self.critic_object_optimizer),
+            ("objencoder",self.objencoder,self.objencoder_optimizer)
+        ]
         for param in all_tuple:
             create_state(*param)
         torch.save(states, path)
@@ -674,9 +683,13 @@ class Seq2SeqAgent(BaseAgent):
             model.load_state_dict(state)
             if args.loadOptim:
                 optimizer.load_state_dict(states[name]['optimizer'])
-        all_tuple = [("encoder", self.encoder, self.encoder_optimizer),
-                     ("decoder", self.decoder, self.decoder_optimizer),
-                     ("critic", self.critic, self.critic_optimizer)]
+        all_tuple = [
+            ("encoder",self.encoder,self.encoder_optimizer),
+            ("decoder",self.decoder,self.decoder_optimizer),
+            ("critic",self.critic,self.critic_optimizer),
+            # ("critic_object",self.critic_object,self.critic_object_optimizer),
+            ("objencoder",self.objencoder,self.objencoder_optimizer)
+        ]
         for param in all_tuple:
             recover_state(*param)
         return states['encoder']['epoch'] - 1
