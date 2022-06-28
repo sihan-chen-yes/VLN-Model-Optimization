@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.nn.modules import activation
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from param import args
-from egcn_h import GRCU_Cell
+from SEM import SEM
 import math
 class ObjEncoder(nn.Module):
     ''' Encodes object labels using GloVe. '''
@@ -19,14 +19,9 @@ class ObjEncoder(nn.Module):
         self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx)
         self.embedding.weight.data[...] = torch.from_numpy(glove_matrix)
         self.embedding.weight.requires_grad = False
-        if args.obj_clip:
-            self.proj = nn.Linear(512,300)
 
     def forward(self, inputs):
-        if args.obj_clip:
-            embeds = self.proj(self.embedding(inputs))
-        else:
-            embeds = self.embedding(inputs)
+        embeds = self.embedding(inputs)
         return embeds
 
 class EncoderLSTM(nn.Module):
@@ -188,7 +183,7 @@ class ASODecoderLSTM(nn.Module):
         self.drop = nn.Dropout(p=dropout_ratio)
         self.drop_env = nn.Dropout(p=args.featdropout)
         self.feat_att_layer = SoftDotAttention(hidden_size, args.visual_feat_size+args.angle_feat_size)
-        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size + args.gcn_dim, hidden_size)
+        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size+args.gcn_dim, hidden_size)
 
         self.action_att_layer = SoftDotAttention(hidden_size, hidden_size)
         self.subject_att_layer = SoftDotAttention(hidden_size, hidden_size)
@@ -198,32 +193,34 @@ class ASODecoderLSTM(nn.Module):
         self.fuse_a = nn.Linear(hidden_size, 1)
         self.fuse_s = nn.Linear(hidden_size, 1)
         self.fuse_o = nn.Linear(hidden_size, 1)
+        #TODO
         self.static_weights = nn.Parameter(torch.Tensor(args.gcn_dim,args.gcn_dim))
         self.reset_param(self.static_weights)
         self.value_action = nn.Sequential(nn.Linear(args.angle_feat_size, hidden_size), nn.Tanh())
         self.subject_att = ScaledSoftDotAttention(args.angle_feat_size, args.angle_feat_size, args.visual_feat_size, hidden_size)    
-        self.object_att = ScaledSoftDotAttention(hidden_size, args.glove_dim+args.angle_feat_size, args.glove_dim+args.angle_feat_size, 
+        self.object_att = ScaledSoftDotAttention(hidden_size, args.clip_dim+args.angle_feat_size, args.clip_dim+args.angle_feat_size,
         hidden_size)
         self.object_graph_att_in = SoftDotAttention(hidden_size,args.gcn_dim)
-        self.object_graph_att = SoftDotAttention(hidden_size,args.glove_dim)
-        self.object_mapping = nn.Sequential(nn.Linear(args.in_feats,args.gcn_dim),nn.Tanh())
+        self.object_graph_att = SoftDotAttention(hidden_size,args.out_feats)
+        #TODO here size
+        self.object_mapping = nn.Sequential(nn.Linear(args.visual_feat_size+args.angle_feat_size,args.gcn_dim),nn.Tanh())
         self.object_mapping_out = nn.Sequential(nn.Linear(args.gcn_dim,args.out_feats),nn.Tanh())
-        self.lstm_out_mapping = nn.Sequential(nn.Linear(args.glove_dim+hidden_size,hidden_size),nn.Tanh())
+        self.lstm_out_mapping = nn.Sequential(nn.Linear(args.out_feats+hidden_size,hidden_size),nn.Tanh())
         if args.egcn_activation == 'relu':
             self.activation = torch.nn.RReLU()
-
-
-        #TODO
-        self.egcn = GRCU_Cell(args, self.activation)
+        #TODO SEM
+        self.egcn = SEM(args, self.activation)
 
 #        cand attention layer
         self.cand_att_a = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_s = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_o = SoftDotAttention(hidden_size, hidden_size)
+
     def reset_param(self,t):
         #Initialize based on the number of columns
         stdv = 1. / math.sqrt(t.size(1))
-        t.data.uniform_(-stdv,stdv)    
+        t.data.uniform_(-stdv,stdv)
+
     def compute_adj_list(self,near_id_feat):
         current_list = near_id_feat.unsqueeze(-1).expand(-1,-1,near_id_feat.shape[1])
         target_list = near_id_feat.unsqueeze(1).expand(-1,near_id_feat.shape[1],-1)
@@ -245,67 +242,97 @@ class ASODecoderLSTM(nn.Module):
                 near_visual_mask, near_visual_feat, near_angle_feat,
                 near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,
                 h_0, prev_h1, c_0,
-                ctx, ctx_mask=None,clip_language_feature=None,
+                ctx, ctx_mask=None,word_level_features=None,sent_level_features=None,
                 already_dropfeat=False):
+        #16 64 batch action_embs_size
         action_embeds = self.action_embedding(action)
         action_embeds = self.drop(action_embeds)
         if not already_dropfeat:
             feature[..., :-args.angle_feat_size] = self.drop_env(feature[..., :-args.angle_feat_size])
             cand_visual_feat = self.drop_env(cand_visual_feat)
             near_visual_feat = self.drop_env(near_visual_feat)
+        #16 10 8 512 batch candiate object_num feat
         cand_obj_feat = self.drop_env(cand_obj_feat)
+        #16 10 4 8 512 batch candiate neighbor object feat_size
         near_obj_feat = self.drop_env(near_obj_feat)
         # to_save = [cand_angle_feat.cpu(),cand_obj_feat.cpu(),near_angle_feat.cpu(),near_obj_mask.cpu(),near_obj_feat.cpu()]
         # torch.save(to_save,'test')
         # import ipdb;ipdb.set_trace()
+        # 16 10 5 8 512 batch candiate neighbor object feat_size
         object_graph_feat = torch.cat((cand_obj_feat.unsqueeze(2),near_obj_feat),2)
+        #16 10 5 8 -> 16 10 5 8 TODO ?????
         near_id_feat = near_id_feat.unsqueeze(-1).expand(-1,-1,-1,object_graph_feat.shape[3])
+        #16 10 5 128 -> 16 10 5 8 128
         angle_graph_feat = near_angle_feat.unsqueeze(3).expand(-1,-1,-1,object_graph_feat.shape[3],-1)
-
+        #16 10 5 8 512 -> 16 400 512
         object_graph_feat = object_graph_feat.reshape(near_obj_feat.shape[0],-1,near_obj_feat.shape[-1])
-
+        #16 10 5 8 128 -> 16 400 128
         angle_graph_feat = angle_graph_feat.reshape(near_angle_feat.shape[0],-1,angle_graph_feat.shape[-1])
-
+        #16 10 5 8 -> 16 400      id -> feat
         near_id_feat = near_id_feat.reshape(near_id_feat.shape[0],-1)
+        #16 400 640
         object_graph_feat = torch.cat((object_graph_feat,angle_graph_feat),2)
         if args.distance_decay_function =='same':
+            #16 400 400
             adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
         else:
             adj_list = self.compute_adj_list(near_id_feat)
+        #16 400
         mask = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1]).cuda()
+        #16 400 640 -> 16 400 512
         object_graph_feat = self.object_mapping(object_graph_feat)
+        #16 512
         prev_h1_drop = self.drop(prev_h1)
+        #feature 16 36 640
+        #16 640
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
         di = adj_list.sum(dim=1)
         di = di.pow(-1/2)
+        #16 400 400
         weight = di.unsqueeze(1)*adj_list*di.unsqueeze(-1)
+        #16 400 512
         node_embs = self.activation(weight.matmul(object_graph_feat.matmul(self.static_weights)))
+        #16 512 batch_size gcn_dim
         node_feat,_ = self.object_graph_att_in(prev_h1,node_embs,output_tilde=False)
+        #16 64+640+512
         concat_input = torch.cat((action_embeds, attn_feat, node_feat), dim=-1)
+        #16 512 batch hidden_size only cell
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
         h_1_drop = self.drop(h_1)
+        #16 512
         object_h1_drop = h_1_drop
+        #16 64 512
         object_ctx = ctx.detach()
+        #16 512
         selector,_, _ = self.topk_att_layer(object_h1_drop,object_ctx,ctx_mask)
-
-        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,mask,selector)
-
+        #SEM
+        #16 400 400
+        #16 400 512
+        #16 512
+        #16 400
+        #16 512
+        #TODO
+        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,word_level_features,mask,selector)
+        #16 5 512 -> 16 5 300
         node_feats = self.object_mapping_out(node_feats)
+        #16 5 300 -> 16 300
         node_feat, _ = self.object_graph_att(h_1_drop,node_feats, output_tilde=False)
-        h_1_drop =self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
+        #16 300+512 -> 16 512
+        h_1_drop = self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)
         if args.CLIP_language:
-            h_s = (h_s + clip_language_feature)/2
+            h_s = (h_s + sent_level_features)/2
         h_o, u_o, _ = self.object_att_layer(h_1_drop, ctx, ctx_mask)
         h_a_drop, u_a_drop = self.drop(h_a), self.drop(u_a)
         h_s_drop, u_s_drop = self.drop(h_s), self.drop(u_s)
         h_o_drop, u_o_drop = self.drop(h_o), self.drop(u_o)
         fusion_weight = torch.cat([self.fuse_a(u_a_drop), self.fuse_s(u_s_drop), self.fuse_o(u_o_drop)], dim=-1)
         fusion_weight = F.softmax(fusion_weight, dim=-1)
-
+        #batch candidate
         B, L = near_visual_mask.shape[0], near_visual_mask.shape[1]
-        #action 
+        #action
+        # B L hidden_size
         v_action = self.value_action(cand_angle_feat)
 
         #subject
@@ -452,7 +479,7 @@ class SpeakerDecoder(nn.Module):
         return logit, h1, c1
     
 if args.CLIP_language:
-    import clip
+    from myclip import clip
     class CLIP_language(nn.Module):
 
         def __init__(self):
@@ -462,5 +489,5 @@ if args.CLIP_language:
         def forward(self,text_list):
             with torch.no_grad():
                 text = clip.tokenize(text_list,truncate=True).cuda()
-                text_features = self.model.encode_text(text)
-            return text_features
+                word_level_features,sent_level_features = self.model.encode_text(text)
+            return word_level_features,sent_level_features

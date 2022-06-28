@@ -84,16 +84,15 @@ class Param:
         self.parser.add_argument("--angle_feat_size", dest="angle_feat_size", type=int, default=128)
         self.parser.add_argument("--visual_feat", dest="visual_feat", action="store_const", default=False, const=True)
         self.parser.add_argument("--visual_feat_size", dest="visual_feat_size", type=int, default=512)
-
-        self.parser.add_argument("--in_feats",type=int,default=428)
         self.parser.add_argument("--out_feats",type=int,default=300)
-        self.parser.add_argument("--gcn_dim",type=int,default=100)
+        self.parser.add_argument("--gcn_dim",type=int,default=512)
         self.parser.add_argument("--egcn_activation",type=str,default='relu')
         self.parser.add_argument("--distance_decay_function",type=str,default='exp')
         self.parser.add_argument("--CLIP_language",action='store_true',default=False)
         #debug
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)
+        self.parser.add_argument("--clip_dim", dest='clip_dim', type=int,` default=512)
         self.parser.add_argument("--gcn_topk",type=int,default=5)
         self.parser.add_argument("--obj_clip", dest="obj_clip", action="store_true", default=False)
         # A2C

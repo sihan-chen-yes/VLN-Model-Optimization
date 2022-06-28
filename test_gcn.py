@@ -6,10 +6,10 @@ import torch.nn.functional as F
 from torch.nn.modules import activation
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from param import args
-from egcn_h import GRCU_Cell
+from SEM import SEM
 if args.egcn_activation == 'relu':
      act = torch.nn.RReLU()
-egcn = GRCU_Cell(args,act)
+egcn = SEM(args, act)
 egcn.cuda()
 egcn.train()
 cand_angle_feat,cand_obj_feat,near_angle_feat ,near_obj_mask ,near_obj_feat = torch.load('test')

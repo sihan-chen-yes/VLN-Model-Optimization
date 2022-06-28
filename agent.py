@@ -102,7 +102,7 @@ class Seq2SeqAgent(BaseAgent):
         with open('img_features/objects/object_vocab.txt', 'r') as f_ov:
             obj_vocab = [k.strip() for k in f_ov.readlines()]
         if args.obj_clip:
-            obj_matrix = utils.get_clip_matrix(obj_vocab, 512)
+            obj_matrix = utils.get_clip_matrix(obj_vocab, args.clip_dim)
         else:
             obj_matrix = utils.get_glove_matrix(obj_vocab, args.glove_dim)
         # Models
@@ -348,7 +348,9 @@ class Seq2SeqAgent(BaseAgent):
         ctx, h_t, c_t = self.encoder(seq, seq_lengths)
         if args.CLIP_language:
             row_text= [x['instructions'] for x in perm_obs]
-            clip_language_feature = self.CLIP_language(row_text)
+            word_level_features,sent_level_features = self.CLIP_language(row_text)
+            word_level_features = word_level_features.float()
+            sent_level_features = sent_level_features.float()
         ctx_mask = seq_mask
         self.decoder.egcn.init_weights(h_t.detach())
         # Record starting point
@@ -395,7 +397,7 @@ class Seq2SeqAgent(BaseAgent):
                                                near_visual_mask, near_visual_feat, near_angle_feat,
                                                near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat,
                                                h_t, h1, c_t,
-                                               ctx, ctx_mask, clip_language_feature,
+                                               ctx, ctx_mask, word_level_features,sent_level_features,
                                                already_dropfeat=(speaker is not None))
             policy_score_probs.append(score_policy)
             hidden_states.append(h_t)
@@ -512,7 +514,7 @@ class Seq2SeqAgent(BaseAgent):
                                             near_visual_mask, near_visual_feat, near_angle_feat,
                                             near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,  
                                             h_t, h1, c_t,
-                                            ctx, ctx_mask,clip_language_feature,
+                                            ctx, ctx_mask,word_level_features,sent_level_features,
                                             already_dropfeat=(speaker is not None))
             rl_loss = 0.
             # NOW, A2C!!!
