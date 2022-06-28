@@ -92,7 +92,7 @@ class Param:
         #debug
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)
-        self.parser.add_argument("--clip_dim", dest='clip_dim', type=int,` default=512)
+        self.parser.add_argument("--clip_dim", dest='clip_dim', type=int, default=512)
         self.parser.add_argument("--gcn_topk",type=int,default=5)
         self.parser.add_argument("--obj_clip", dest="obj_clip", action="store_true", default=False)
         # A2C

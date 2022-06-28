@@ -55,15 +55,15 @@ class SEM(torch.nn.Module):
         di = di.pow(-1/2)
         Ahat = di.unsqueeze(1)*Ahat*di.unsqueeze(-1).detach()
         #batch gcn_topk gcn_topk
-        tilde_A = self.evolve_A + Ahat + attn_A
+        self.evolve_A.data = self.evolve_A + Ahat + attn_A
         node_embs = node_embs.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,node_embs.shape[-1]))
-        node_embs = self.activation(tilde_A.matmul(node_embs.matmul(self.GCN_weights)))
+        node_embs = self.activation(self.evolve_A.matmul(node_embs.matmul(self.GCN_weights)))
 
         if args.static_gcn_weights:
-            node_embs1 = self.activation(tilde_A.matmul(node_embs.matmul(self.static_weights)))
+            node_embs1 = self.activation(self.evolve_A.matmul(node_embs.matmul(self.static_weights)))
             node_embs = (node_embs+node_embs1)/2
         if args.static_gcn_weights_only:
-            node_embs1 = self.activation(tilde_A.matmul(node_embs.matmul(self.static_weights)))
+            node_embs1 = self.activation(self.evolve_A.matmul(node_embs.matmul(self.static_weights)))
             node_embs = node_embs1
         return node_embs,policy_score,scorer,entropy_object
 

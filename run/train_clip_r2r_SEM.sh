@@ -1,6 +1,6 @@
-name=train_clip_obj_r2r_debug
+name=train_clip_obj_r2r_SEM
 flag="--attn soft --train listener
-      --featdropout 0.3 --batchSize 16
+      --featdropout 0.3 
       --visual_feat --angle_feat
       --feedback sample
       --mlWeight 0.2 
