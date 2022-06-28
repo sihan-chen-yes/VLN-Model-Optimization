@@ -1,6 +1,6 @@
-name=train_glove_obj_r2r
+name=train_glove_obj_r2r_origin
 flag="--attn soft --train listener
-      --featdropout 0.3 --batchSize 32
+      --featdropout 0.3
       --visual_feat --angle_feat
       --feedback sample
       --mlWeight 0.2 
