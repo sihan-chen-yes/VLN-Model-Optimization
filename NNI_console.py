@@ -1,10 +1,11 @@
+from nni.experiment import Experiment
+
 search_space = {
     'lr': {'_type': 'choice', '_value': [0.00005, 0.00014, 0.00023, 0.00032, 0.00041, 0.0005]},
     'batchSize': {'_type': 'choice', '_value': [32, 48, 64, 96]},
     'gcn_dim': {'_type': 'choice', '_value': [64, 128, 256]},
     'mlWeight': {'_type': 'choice', '_value': [0.05, 0.2, 0.5]}
 }
-from nni.experiment import Experiment
 
 experiment = Experiment('local')
 
