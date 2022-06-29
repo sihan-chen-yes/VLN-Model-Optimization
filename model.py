@@ -9,6 +9,9 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from param import args
 from SEM import SEM
 import math
+from param import params
+
+
 class ObjEncoder(nn.Module):
     ''' Encodes object labels using GloVe. '''
 
@@ -183,7 +186,7 @@ class ASODecoderLSTM(nn.Module):
         self.drop = nn.Dropout(p=dropout_ratio)
         self.drop_env = nn.Dropout(p=args.featdropout)
         self.feat_att_layer = SoftDotAttention(hidden_size, args.visual_feat_size+args.angle_feat_size)
-        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size+args.gcn_dim, hidden_size)
+        self.lstm = nn.LSTMCell(action_embed_size+args.visual_feat_size+args.angle_feat_size+params['gcn_dim'], hidden_size)
 
         self.action_att_layer = SoftDotAttention(hidden_size, hidden_size)
         self.subject_att_layer = SoftDotAttention(hidden_size, hidden_size)
@@ -193,24 +196,20 @@ class ASODecoderLSTM(nn.Module):
         self.fuse_a = nn.Linear(hidden_size, 1)
         self.fuse_s = nn.Linear(hidden_size, 1)
         self.fuse_o = nn.Linear(hidden_size, 1)
-        #TODO
-        self.static_weights = nn.Parameter(torch.Tensor(args.gcn_dim,args.gcn_dim))
+        self.static_weights = nn.Parameter(torch.Tensor(params['gcn_dim'],params['gcn_dim']))
         self.reset_param(self.static_weights)
         self.value_action = nn.Sequential(nn.Linear(args.angle_feat_size, hidden_size), nn.Tanh())
         self.subject_att = ScaledSoftDotAttention(args.angle_feat_size, args.angle_feat_size, args.visual_feat_size, hidden_size)    
         self.object_att = ScaledSoftDotAttention(hidden_size, args.clip_dim+args.angle_feat_size, args.clip_dim+args.angle_feat_size,
         hidden_size)
-        self.object_graph_att_in = SoftDotAttention(hidden_size,args.gcn_dim)
+        self.object_graph_att_in = SoftDotAttention(hidden_size,params['gcn_dim'])
         self.object_graph_att = SoftDotAttention(hidden_size,args.out_feats)
-        #TODO here size
-        self.object_mapping = nn.Sequential(nn.Linear(args.visual_feat_size+args.angle_feat_size,args.gcn_dim),nn.Tanh())
-        self.object_mapping_out = nn.Sequential(nn.Linear(args.gcn_dim,args.out_feats),nn.Tanh())
+        self.object_mapping = nn.Sequential(nn.Linear(args.visual_feat_size+args.angle_feat_size,params['gcn_dim']),nn.Tanh())
+        self.object_mapping_out = nn.Sequential(nn.Linear(params['gcn_dim'],args.out_feats),nn.Tanh())
         self.lstm_out_mapping = nn.Sequential(nn.Linear(args.out_feats+hidden_size,hidden_size),nn.Tanh())
         if args.egcn_activation == 'relu':
             self.activation = torch.nn.RReLU()
-        #TODO SEM
         self.egcn = SEM(args, self.activation)
-
 #        cand attention layer
         self.cand_att_a = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_s = SoftDotAttention(hidden_size, hidden_size)
@@ -255,12 +254,9 @@ class ASODecoderLSTM(nn.Module):
         cand_obj_feat = self.drop_env(cand_obj_feat)
         #16 10 4 8 512 batch candiate neighbor object feat_size
         near_obj_feat = self.drop_env(near_obj_feat)
-        # to_save = [cand_angle_feat.cpu(),cand_obj_feat.cpu(),near_angle_feat.cpu(),near_obj_mask.cpu(),near_obj_feat.cpu()]
-        # torch.save(to_save,'test')
-        # import ipdb;ipdb.set_trace()
         # 16 10 5 8 512 batch candiate neighbor object feat_size
         object_graph_feat = torch.cat((cand_obj_feat.unsqueeze(2),near_obj_feat),2)
-        #16 10 5 8 -> 16 10 5 8 TODO ?????
+        #16 10 5 8 -> 16 10 5 8
         near_id_feat = near_id_feat.unsqueeze(-1).expand(-1,-1,-1,object_graph_feat.shape[3])
         #16 10 5 128 -> 16 10 5 8 128
         angle_graph_feat = near_angle_feat.unsqueeze(3).expand(-1,-1,-1,object_graph_feat.shape[3],-1)
@@ -268,7 +264,7 @@ class ASODecoderLSTM(nn.Module):
         object_graph_feat = object_graph_feat.reshape(near_obj_feat.shape[0],-1,near_obj_feat.shape[-1])
         #16 10 5 8 128 -> 16 400 128
         angle_graph_feat = angle_graph_feat.reshape(near_angle_feat.shape[0],-1,angle_graph_feat.shape[-1])
-        #16 10 5 8 -> 16 400      id -> feat
+        #16 10 5 8 -> 16 400
         near_id_feat = near_id_feat.reshape(near_id_feat.shape[0],-1)
         #16 400 640
         object_graph_feat = torch.cat((object_graph_feat,angle_graph_feat),2)
@@ -311,13 +307,12 @@ class ASODecoderLSTM(nn.Module):
         #16 512
         #16 400
         #16 512
-        #TODO
         node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,word_level_features,mask,selector)
         #16 5 512 -> 16 5 300
         node_feats = self.object_mapping_out(node_feats)
         #16 5 300 -> 16 300
         node_feat, _ = self.object_graph_att(h_1_drop,node_feats, output_tilde=False)
-        #16 300+512 -> 16 512
+        #16 512+300 -> 16 512
         h_1_drop = self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)
@@ -372,10 +367,10 @@ class Critic_object(nn.Module):
     def __init__(self):
         super(Critic_object, self).__init__()
         self.state2value = nn.Sequential(
-            nn.Linear(args.gcn_dim, args.gcn_dim),
+            nn.Linear(params['gcn_dim'], params['gcn_dim']),
             nn.ReLU(),
             nn.Dropout(args.dropout),
-            nn.Linear(args.gcn_dim, 1),
+            nn.Linear(params['gcn_dim'], 1),
         )
 
     def forward(self, state):

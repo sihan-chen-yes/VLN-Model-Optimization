@@ -174,11 +174,11 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
             for jdx in range(interval//2): #back_transition
                 listner.zero_grad()
                 listner.env = train_env
-                args.ml_weight = 0.2
+                params['mlWeight'] = 0.2
                 listner.accumulate_gradient(feedback_method)
                 
                 listner.env = aug_env
-                args.ml_weight = 0.6
+                params['mlWeight'] = 0.6
                 listner.accumulate_gradient(feedback_method, speaker=speaker)
                 listner.optim_step()
 

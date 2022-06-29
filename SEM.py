@@ -4,6 +4,7 @@ from torch.nn.parameter import Parameter
 import torch.nn as nn
 import math
 from param import args
+from param import params
 
 class SEM(torch.nn.Module):
     def __init__(self,args,activation):
@@ -12,13 +13,13 @@ class SEM(torch.nn.Module):
         cell_args = u.Namespace({})
         cell_args.rows = args.gcn_topk
         cell_args.cols = args.gcn_topk
-
+        self.mapper = nn.Linear(args.clip_dim,params['gcn_dim'])
         self.evolve_weights = mat_GRU_cell(cell_args)
         self.activation = activation
-        self.GCN_init_mapping = Parameter(torch.Tensor(1,args.gcn_dim))
-        self.init_mapping = nn.Sequential(nn.Linear(args.rnn_dim,args.gcn_dim),nn.Tanh())
+        self.GCN_init_mapping = Parameter(torch.Tensor(1,params['gcn_dim']))
+        self.init_mapping = nn.Sequential(nn.Linear(args.rnn_dim,params['gcn_dim']),nn.Tanh())
         if args.static_gcn_weights or args.static_gcn_weights_only:
-            self.static_weights = nn.Parameter(torch.Tensor(args.gcn_dim,args.gcn_dim))
+            self.static_weights = nn.Parameter(torch.Tensor(params['gcn_dim'],params['gcn_dim']))
             self.reset_param(self.static_weights)
         self.reset_param(self.GCN_init_mapping)
         self.GCN_weights = None
@@ -42,6 +43,7 @@ class SEM(torch.nn.Module):
         self.evolve_A.data,policy_score,scorer,entropy_object,selected_indexes = self.evolve_weights(self.evolve_A,node_embs,mask,ht)
 
         #batch len feat_size
+        word_level_features = self.mapper(word_level_features)
         attn = node_embs.matmul(word_level_features.permute(0,2,1))
         #batch N N -> batch gcn_topk gcn_topk
         attn_A = attn.matmul(attn.permute(0,2,1))
@@ -162,7 +164,7 @@ class TopK(torch.nn.Module):
 class TopK_with_h(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.mapper = nn.Sequential(nn.Linear(args.rnn_dim,args.gcn_dim),nn.Tanh())
+        self.mapper = nn.Sequential(nn.Linear(args.rnn_dim,params['gcn_dim']),nn.Tanh())
         self.softmax = nn.Softmax()
         self.k = args.gcn_topk
 

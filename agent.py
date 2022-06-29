@@ -599,7 +599,7 @@ class Seq2SeqAgent(BaseAgent):
             self.rollout(train_ml=args.teacher_weight, train_rl=False, **kwargs)
         elif feedback == 'sample':
             self.feedback = 'teacher'
-            self.rollout(train_ml=args.ml_weight, train_rl=False, **kwargs)
+            self.rollout(train_ml=params['mlWeight'], train_rl=False, **kwargs)
             self.feedback = 'sample'
             self.rollout(train_ml=None, train_rl=True, **kwargs)
         else:
@@ -631,9 +631,9 @@ class Seq2SeqAgent(BaseAgent):
                 self.feedback = 'teacher'
                 self.rollout(train_ml=args.teacher_weight, train_rl=False, **kwargs)
             elif feedback == 'sample':
-                if args.ml_weight != 0:
+                if params['mlWeight'] != 0:
                     self.feedback = 'teacher'
-                    self.rollout(train_ml=args.ml_weight, train_rl=False, **kwargs)
+                    self.rollout(train_ml=params['mlWeight'], train_rl=False, **kwargs)
                 self.feedback = 'sample'
                 self.rollout(train_ml=None, train_rl=True, **kwargs)
             else:

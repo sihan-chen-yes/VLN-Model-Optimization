@@ -33,7 +33,7 @@ class Param:
 
         # Listener Model Config
         self.parser.add_argument("--zeroInit", dest='zero_init', action='store_const', default=False, const=True)
-        self.parser.add_argument("--mlWeight", dest='ml_weight', type=float, default=0.05)
+        self.parser.add_argument("--mlWeight", dest='mlWeight', type=float, default=0.05)
         self.parser.add_argument("--teacherWeight", dest='teacher_weight', type=float, default=1.)
         self.parser.add_argument("--accumulateGrad", dest='accumulate_grad', action='store_const', default=False, const=True)
         self.parser.add_argument("--features", type=str, default='imagenet')
@@ -85,7 +85,7 @@ class Param:
         self.parser.add_argument("--visual_feat", dest="visual_feat", action="store_const", default=False, const=True)
         self.parser.add_argument("--visual_feat_size", dest="visual_feat_size", type=int, default=512)
         self.parser.add_argument("--out_feats",type=int,default=300)
-        self.parser.add_argument("--gcn_dim",type=int,default=512)
+        self.parser.add_argument("--gcn_dim",type=int,default=100)
         self.parser.add_argument("--egcn_activation",type=str,default='relu')
         self.parser.add_argument("--distance_decay_function",type=str,default='exp')
         self.parser.add_argument("--CLIP_language",action='store_true',default=False)
@@ -116,7 +116,6 @@ class Param:
             os.makedirs(args.log_dir)
         current_path = os.getcwd()
         git_path = os.path.dirname(__file__)
-        #TODO
         import git
         repo = git.Repo('./methods/SEvol/')
         commit_hash = repo.head.object.hexsha
@@ -150,6 +149,8 @@ DEBUG_FILE = open(os.path.join('snap', args.name, "debug.log"), 'w')
 params = {
     'lr': args.lr,
     'batchSize': args.batchSize,
+    'gcn_dim': args.gcn_dim,
+    'mlWeight': args.mlWeight
 }
 optimized_params = nni.get_next_parameter()
 params.update(optimized_params)
