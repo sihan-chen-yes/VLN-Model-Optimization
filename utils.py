@@ -572,7 +572,7 @@ def get_glove_matrix(index_to_word, vector_dim):
 def get_clip_matrix(index_to_word, vector_dim):
     "load clip matrix"
     #(101+2) x 512
-    with open('img_features/objects/obj_clip_dict.pkl', 'rb') as f:
+    with open('img_features/objects/obj_clip_RN50x4_dict.pkl', 'rb') as f:
         clip = pickle.load(f)
 
     ''' create the weight matrix '''

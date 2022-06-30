@@ -89,7 +89,6 @@ class Param:
         self.parser.add_argument("--egcn_activation",type=str,default='relu')
         self.parser.add_argument("--distance_decay_function",type=str,default='exp')
         self.parser.add_argument("--CLIP_language",action='store_true',default=False)
-        #debug
         self.parser.add_argument("--top_N_obj", dest="top_N_obj", type=int, default=8)
         self.parser.add_argument("--glove_dim", dest='glove_dim', type=int, default=300)
         self.parser.add_argument("--clip_dim", dest='clip_dim', type=int, default=512)
@@ -107,9 +106,6 @@ class Param:
         elif args.task== 'REVERIE':
             args.TRAIN_VOCAB = 'tasks/REVERIE/REVERIE/train_vocab.txt'
             args.TRAINVAL_VOCAB = 'tasks/REVERIE/REVERIE/train_vocab.txt'
-        args.IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
-        args.CANDIDATE_FEATURES = 'img_features/ResNet-152-candidate.tsv'
-        args.features_fast = 'img_features/ResNet-152-imagenet-fast.tsv'
         args.log_dir = 'snap/%s' % args.name
         self.args=args
         if not os.path.exists(args.log_dir):
@@ -135,14 +131,6 @@ class Param:
             assert False
 
 param = Param()
-# args = param.args
-# args.TRAIN_VOCAB = 'tasks/R2R/data/train_vocab.txt'
-# args.TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
-
-# args.IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
-# args.CANDIDATE_FEATURES = 'img_features/ResNet-152-candidate.tsv'
-# args.features_fast = 'img_features/ResNet-152-imagenet-fast.tsv'
-# args.log_dir = 'snap/%s' % args.name
 args = param.args
 DEBUG_FILE = open(os.path.join('snap', args.name, "debug.log"), 'w')
 

@@ -316,8 +316,8 @@ class ASODecoderLSTM(nn.Module):
         h_1_drop = self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)
-        if args.CLIP_language:
-            h_s = (h_s + sent_level_features)/2
+        # if args.CLIP_language:
+        #     h_s = (h_s + sent_level_features)/2
         h_o, u_o, _ = self.object_att_layer(h_1_drop, ctx, ctx_mask)
         h_a_drop, u_a_drop = self.drop(h_a), self.drop(u_a)
         h_s_drop, u_s_drop = self.drop(h_s), self.drop(u_s)
@@ -479,7 +479,7 @@ if args.CLIP_language:
 
         def __init__(self):
             super().__init__()
-            self.model,preprocess = clip.load('RN101')
+            self.model,preprocess = clip.load('RN50x4')
         
         def forward(self,text_list):
             with torch.no_grad():

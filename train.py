@@ -40,7 +40,7 @@ TRAINVAL_VOCAB = 'tasks/R2R/data/trainval_vocab.txt'
 
 IMAGENET_FEATURES = 'img_features/ResNet-152-imagenet.tsv'
 PLACE365_FEATURES = 'img_features/ResNet-152-places365.tsv'
-CLIP_FEATURES = 'img_features/CLIP-ViT-B-32-views.tsv'
+CLIP_FEATURES = 'img_features/CLIP-ResNet-50x4-views.tsv'
 if args.features == 'imagenet':
     features = IMAGENET_FEATURES
 elif args.features == 'places365':
