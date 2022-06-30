@@ -113,9 +113,10 @@ class Seq2SeqAgent(BaseAgent):
         self.decoder = model.ASODecoderLSTM(args.aemb, args.rnn_dim, args.dropout).cuda()
         self.critic = model.Critic().cuda()
         #TODO
-        self.models = (self.encoder, self.decoder, self.critic,self.objencoder)
+        self.models = (self.encoder, self.decoder, self.critic)
         #TODO
         self.critic_object = model.Critic_object().cuda()
+
 
         # Optimizers
         self.encoder_optimizer = args.optimizer(self.encoder.parameters(), lr=params['lr'])
@@ -123,10 +124,9 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=params['lr'])
         #TODO
         self.critic_object_optimizer = args.optimizer(self.critic_object.parameters(), lr=params['lr'])
-        self.objencoder_optimizer = args.optimizer(self.objencoder.parameters(),lr=args.lr)
+        self.objencoder_optimizer = args.optimizer(self.objencoder.parameters(),lr=params['lr'])
         #TODO
-        self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer,
-                           self.objencoder_optimizer)
+        self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer)
 
         # Evaluations
         self.losses = []
