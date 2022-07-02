@@ -31,80 +31,23 @@ class EncoderLSTM(nn.Module):
     ''' Encodes navigation instructions, returning hidden state context (for
         attention methods) and a decoder initial state. '''
 
-    def __init__(self, vocab_size, embedding_size, hidden_size, padding_idx, 
-                            dropout_ratio, bidirectional=False, num_layers=1, glove=None):
+    def __init__(self, hidden_size,dropout_ratio):
         super(EncoderLSTM, self).__init__()
-        self.embedding_size = embedding_size
-        self.hidden_size = hidden_size
         self.drop = nn.Dropout(p=dropout_ratio)
-        if bidirectional:
-            print("Using Bidir in EncoderLSTM")
-        self.num_directions = 2 if bidirectional else 1
-        self.num_layers = num_layers
-        self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx)
-        if args.CLIP_language:
-            None
-        elif glove is not None:
-            print('Using glove word embedding')
-            self.embedding.weight.data[...] = torch.from_numpy(glove)
-            self.embedding.weight.requires_grad = False
-        input_size = embedding_size
-        self.lstm = nn.LSTM(input_size, hidden_size, self.num_layers,
-                            batch_first=True, dropout=dropout_ratio, 
-                            bidirectional=bidirectional)
-        self.encoder2decoder = nn.Linear(hidden_size * self.num_directions,
-            hidden_size * self.num_directions
-        )
+        self.encoder2decoder = nn.Linear(hidden_size,hidden_size)
 
-    def init_state(self, inputs):
-        ''' Initialize to zero cell states and hidden states.'''
-        batch_size = inputs.size(0)
-        h0 = Variable(torch.zeros(
-            self.num_layers * self.num_directions,
-            batch_size,
-            self.hidden_size
-        ), requires_grad=False)
-        c0 = Variable(torch.zeros(
-            self.num_layers * self.num_directions,
-            batch_size,
-            self.hidden_size
-        ), requires_grad=False)
-
-        return h0.cuda(), c0.cuda()
-
-    def forward(self, inputs, lengths):
-        ''' Expects input vocab indices as (batch, seq_len). Also requires a 
+    def forward(self, word_level_features):
+        ''' Expects input vocab indices as (batch, seq_len). Also requires a
             list of lengths for dynamic batching. '''
-        embeds = self.embedding(inputs)  # (batch, seq_len, embedding_size)
-        embeds = self.drop(embeds)
-        h0, c0 = self.init_state(inputs)
-        packed_embeds = pack_padded_sequence(embeds, lengths, batch_first=True)
-        enc_h, (enc_h_t, enc_c_t) = self.lstm(packed_embeds, (h0, c0))
-
-        if self.num_directions == 2:    # The size of enc_h_t is (num_layers * num_directions, batch, hidden_size)
-            h_t = torch.cat((enc_h_t[-1], enc_h_t[-2]), 1)
-            c_t = torch.cat((enc_c_t[-1], enc_c_t[-2]), 1)
-        else:
-            h_t = enc_h_t[-1]
-            c_t = enc_c_t[-1] # (batch, hidden_size)
-
-        ctx, _ = pad_packed_sequence(enc_h, batch_first=True)
-
+        ctx = self.drop(word_level_features)
         if args.sub_out == "max":
             ctx_max, _ = ctx.max(1)
             decoder_init = nn.Tanh()(self.encoder2decoder(ctx_max))
-        elif args.sub_out == "tanh":
-            decoder_init = nn.Tanh()(self.encoder2decoder(h_t))
         else:
             assert False
-
-        ctx = self.drop(ctx)
-        if args.zero_init:
-            return ctx, torch.zeros_like(decoder_init), torch.zeros_like(c_t)
-        else:
-            return ctx, decoder_init, c_t  # (batch, seq_len, hidden_size*num_directions)
+        c_t = ctx[:,-1,:]
+        return ctx, decoder_init, c_t  # (batch, seq_len, hidden_size)
                                  # (batch, hidden_size)
-
 
 class SoftDotAttention(nn.Module):
     '''Soft Dot Attention. 
@@ -135,9 +78,9 @@ class SoftDotAttention(nn.Module):
         attn = torch.bmm(context, target).squeeze(2)  # batch x seq_len
         logit = attn
 
-        if mask is not None:
-            # -Inf masking prior to the softmax
-            attn.masked_fill_(mask.bool(), -float('inf'))
+        # if mask is not None:
+        #     # -Inf masking prior to the softmax
+        #     attn.masked_fill_(mask.bool(), -float('inf'))
         attn = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
         attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
 
@@ -241,7 +184,7 @@ class ASODecoderLSTM(nn.Module):
                 near_visual_mask, near_visual_feat, near_angle_feat,
                 near_obj_mask, near_obj_feat, near_edge_feat,near_id_feat,
                 h_0, prev_h1, c_0,
-                ctx, ctx_mask=None,word_level_features=None,sent_level_features=None,
+                ctx, ctx_mask=None,
                 already_dropfeat=False):
         #16 64 batch action_embs_size
         action_embeds = self.action_embedding(action)
@@ -307,7 +250,7 @@ class ASODecoderLSTM(nn.Module):
         #16 512
         #16 400
         #16 512
-        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,word_level_features,mask,selector)
+        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,ctx,mask,selector)
         #16 5 512 -> 16 5 300
         node_feats = self.object_mapping_out(node_feats)
         #16 5 300 -> 16 300
