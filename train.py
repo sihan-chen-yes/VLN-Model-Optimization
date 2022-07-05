@@ -226,7 +226,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
                 if metric in ["spl"] and env_name in ["val_unseen"]:
                     item_name = "default"
                 else:
-                    item_name = "{}_{}".format(env_name,metric)
+                    item_name = "{}/{}".format(env_name,metric)
                 metric_cur_dict[item_name] = val
                 if metric in min_metric_list:
                     metric_best_dict[item_name] = val if val < metric_best_dict[item_name] \
@@ -235,7 +235,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
                     metric_best_dict[item_name] = val if val > metric_best_dict[item_name] \
                         else metric_best_dict[item_name]
                 #for tensorboard log (splits)
-                title = '{}_{}'.format(env_name,metric)
+                title = '{}/{}'.format(env_name,metric)
                 writer.add_scalar(title, val, idx)
 
                 loss_str += ' %s: %.3f' % (metric, val)

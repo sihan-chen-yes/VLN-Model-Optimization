@@ -234,6 +234,7 @@ def run_eval(resfiles, split_tag, evalType='nav'):
     '''evalType: nav or whole'''
     instrType = 'instructions'
     eval_seq2seq(resfiles, instrType, split_tag, evalType)
+
 if __name__=='__main__':
     ev = Evaluation('val_unseen','instructions')
     env_result = json.load(open('experiments/l1.3/results/follower_pm_sample2step_imagenet_mean_pooled_1heads_val_unseen_iter_6400.json'))

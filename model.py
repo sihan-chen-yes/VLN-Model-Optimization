@@ -31,21 +31,17 @@ class EncoderLSTM(nn.Module):
     ''' Encodes navigation instructions, returning hidden state context (for
         attention methods) and a decoder initial state. '''
 
-    def __init__(self, hidden_size,dropout_ratio):
+    def __init__(self, dropout_ratio):
         super(EncoderLSTM, self).__init__()
         self.drop = nn.Dropout(p=dropout_ratio)
-        self.encoder2decoder = nn.Linear(hidden_size,hidden_size)
 
-    def forward(self, word_level_features):
+    def forward(self, word_level_features, sent_level_features):
         ''' Expects input vocab indices as (batch, seq_len). Also requires a
             list of lengths for dynamic batching. '''
         ctx = self.drop(word_level_features)
-        if args.sub_out == "max":
-            ctx_max, _ = ctx.max(1)
-            decoder_init = nn.Tanh()(self.encoder2decoder(ctx_max))
-        else:
-            assert False
-        c_t = ctx[:,-1,:]
+        decoder_init = self.drop(sent_level_features)
+        c_t = decoder_init
+
         return ctx, decoder_init, c_t  # (batch, seq_len, hidden_size)
                                  # (batch, hidden_size)
 
@@ -78,9 +74,9 @@ class SoftDotAttention(nn.Module):
         attn = torch.bmm(context, target).squeeze(2)  # batch x seq_len
         logit = attn
 
-        # if mask is not None:
-        #     # -Inf masking prior to the softmax
-        #     attn.masked_fill_(mask.bool(), -float('inf'))
+        if mask is not None:
+            # -Inf masking prior to the softmax
+            attn.masked_fill_(mask.bool(), -float('inf'))
         attn = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
         attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
 
@@ -259,9 +255,8 @@ class ASODecoderLSTM(nn.Module):
         h_1_drop = self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)
-        # if args.CLIP_language:
-        #     h_s = (h_s + sent_level_features)/2
         h_o, u_o, _ = self.object_att_layer(h_1_drop, ctx, ctx_mask)
+
         h_a_drop, u_a_drop = self.drop(h_a), self.drop(u_a)
         h_s_drop, u_s_drop = self.drop(h_s), self.drop(u_s)
         h_o_drop, u_o_drop = self.drop(h_o), self.drop(u_o)
@@ -424,8 +419,8 @@ if args.CLIP_language:
             super().__init__()
             self.model,preprocess = clip.load('RN50x4')
         
-        def forward(self,text_list):
+        def forward(self,text_list,max_length):
             with torch.no_grad():
                 text = clip.tokenize(text_list,truncate=True).cuda()
-                word_level_features,sent_level_features = self.model.encode_text(text)
+                word_level_features,sent_level_features = self.model.encode_text(text,max_length)
             return word_level_features,sent_level_features

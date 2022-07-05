@@ -107,24 +107,22 @@ class Seq2SeqAgent(BaseAgent):
             obj_matrix = utils.get_glove_matrix(obj_vocab, args.glove_dim)
         # Models
         self.objencoder = model.ObjEncoder(obj_matrix.shape[0], obj_matrix.shape[1], obj_matrix).cuda()
-        self.encoder = model.EncoderLSTM(args.rnn_dim, args.dropout).cuda()
+        self.encoder = model.EncoderLSTM(args.dropout).cuda()
         self.decoder = model.ASODecoderLSTM(args.aemb, args.rnn_dim, args.dropout).cuda()
         self.critic = model.Critic().cuda()
         #TODO
-        self.models = (self.encoder, self.decoder, self.critic)
+        self.models = (self.decoder, self.critic)
         #TODO
         self.critic_object = model.Critic_object().cuda()
 
 
         # Optimizers
-        self.encoder_optimizer = args.optimizer(self.encoder.parameters(), lr=params['lr'])
         self.decoder_optimizer = args.optimizer(self.decoder.parameters(), lr=params['lr'])
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=params['lr'])
         #TODO
-        self.critic_object_optimizer = args.optimizer(self.critic_object.parameters(), lr=params['lr'])
-        self.objencoder_optimizer = args.optimizer(self.objencoder.parameters(),lr=params['lr'])
+        self.optimizers = (self.decoder_optimizer, self.critic_optimizer)
         #TODO
-        self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer)
+        self.critic_object_optimizer = args.optimizer(self.critic_object.parameters(), lr=params['lr'])
 
         # Evaluations
         self.losses = []
@@ -342,12 +340,13 @@ class Seq2SeqAgent(BaseAgent):
         # Reorder the language input for the encoder (do not ruin the original code)
         seq, seq_mask, seq_lengths, perm_idx = self._sort_batch(obs)
         perm_obs = obs[perm_idx]
-
+        max_length = seq_lengths[0]
         if args.CLIP_language:
             row_text= [x['instructions'] for x in perm_obs]
-            word_level_features,_ = self.CLIP_language(row_text)
+            word_level_features,sent_level_features = self.CLIP_language(row_text,max_length)
             word_level_features = word_level_features.float()
-        ctx, h_t, c_t = self.encoder(word_level_features)
+            sent_level_features = sent_level_features.float()
+        ctx, h_t, c_t = self.encoder(word_level_features,sent_level_features)
         ctx_mask = seq_mask
         self.decoder.egcn.init_weights(h_t.detach())
         # Record starting point

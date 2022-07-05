@@ -1,4 +1,4 @@
-name=train_clip_obj_r2r_SEM_50x4
+name=train_clip_obj_r2r_SEM_50x4_noenc
 flag="--attn soft --train listener
       --featdropout 0.3 
       --visual_feat --angle_feat

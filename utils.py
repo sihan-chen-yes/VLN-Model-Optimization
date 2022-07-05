@@ -164,7 +164,7 @@ class Tokenizer(object):
 
         if len(encoding) < max_length:
             encoding += [self.word_to_index['<PAD>']] * (max_length-len(encoding))  # Padding
-        elif len(encoding) > max_length:
+        elif len(encoding) >= max_length:
             encoding[max_length - 1] = self.word_to_index['<EOS>']                  # Cut the length with EOS
 
         return np.array(encoding[:max_length])

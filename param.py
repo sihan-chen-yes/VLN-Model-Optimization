@@ -13,7 +13,7 @@ class Param:
         self.parser.add_argument('--train', type=str, default='speaker')
         self.parser.add_argument('--task',type=str,default='R2R')
         # Data preparation
-        self.parser.add_argument('--maxInput', type=int, default=80, help="max input instruction")
+        self.parser.add_argument('--maxInput', type=int, default=77, help="max input instruction")
         self.parser.add_argument('--maxDecode', type=int, default=120, help="max input instruction")
         self.parser.add_argument('--maxAction', type=int, default=20, help='Max Action sequence')
         self.parser.add_argument('--batchSize', type=int, default=64)
