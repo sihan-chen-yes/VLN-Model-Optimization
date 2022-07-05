@@ -149,7 +149,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
             if metric in ["spl"] and env_name in ["val_unseen"]:
                 item_name = "default"
             else:
-                item_name = "{}_{}".format(env_name, metric)
+                item_name = "{}/{}".format(env_name, metric)
             metric_cur_dict[item_name] = 0
             if metric in min_metric_list:
                 metric_best_dict[item_name] = float('inf')

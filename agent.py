@@ -338,16 +338,20 @@ class Seq2SeqAgent(BaseAgent):
             obs = np.array(self.env.reset(batch))
 
         # Reorder the language input for the encoder (do not ruin the original code)
-        seq, seq_mask, seq_lengths, perm_idx = self._sort_batch(obs)
+        _, _, _, perm_idx = self._sort_batch(obs)
         perm_obs = obs[perm_idx]
-        max_length = seq_lengths[0]
         if args.CLIP_language:
             row_text= [x['instructions'] for x in perm_obs]
-            word_level_features,sent_level_features = self.CLIP_language(row_text,max_length)
+            word_level_features,sent_level_features, ctx_mask = self.CLIP_language(row_text)
             word_level_features = word_level_features.float()
             sent_level_features = sent_level_features.float()
+        # if max_length != seq_lengths[0]:
+        #     print(perm_obs[0]['instructions'])
+        #     print(seq[0])
+        #     print(seq_mask[0])
+        #     print(max_length)
+        #     print(seq_lengths[0])
         ctx, h_t, c_t = self.encoder(word_level_features,sent_level_features)
-        ctx_mask = seq_mask
         self.decoder.egcn.init_weights(h_t.detach())
         # Record starting point
         traj = [{
@@ -658,11 +662,11 @@ class Seq2SeqAgent(BaseAgent):
                 'optimizer': optimizer.state_dict(),
             }
         all_tuple = [
-            ("encoder",self.encoder,self.encoder_optimizer),
+            # ("encoder",self.encoder,self.encoder_optimizer),
             ("decoder",self.decoder,self.decoder_optimizer),
             ("critic",self.critic,self.critic_optimizer),
             # ("critic_object",self.critic_object,self.critic_object_optimizer),
-            ("objencoder",self.objencoder,self.objencoder_optimizer)
+            # ("objencoder",self.objencoder,self.objencoder_optimizer)
         ]
         for param in all_tuple:
             create_state(*param)
@@ -682,11 +686,11 @@ class Seq2SeqAgent(BaseAgent):
             if args.loadOptim:
                 optimizer.load_state_dict(states[name]['optimizer'])
         all_tuple = [
-            ("encoder",self.encoder,self.encoder_optimizer),
+            # ("encoder",self.encoder,self.encoder_optimizer),
             ("decoder",self.decoder,self.decoder_optimizer),
             ("critic",self.critic,self.critic_optimizer),
             # ("critic_object",self.critic_object,self.critic_object_optimizer),
-            ("objencoder",self.objencoder,self.objencoder_optimizer)
+            # ("objencoder",self.objencoder,self.objencoder_optimizer)
         ]
         for param in all_tuple:
             recover_state(*param)

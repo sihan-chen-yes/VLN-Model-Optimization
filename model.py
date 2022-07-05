@@ -419,8 +419,8 @@ if args.CLIP_language:
             super().__init__()
             self.model,preprocess = clip.load('RN50x4')
         
-        def forward(self,text_list,max_length):
+        def forward(self,text_list):
             with torch.no_grad():
                 text = clip.tokenize(text_list,truncate=True).cuda()
-                word_level_features,sent_level_features = self.model.encode_text(text,max_length)
-            return word_level_features,sent_level_features
+                word_level_features,sent_level_features,mask= self.model.encode_text(text)
+            return word_level_features,sent_level_features,mask
