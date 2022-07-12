@@ -21,7 +21,7 @@ import model
 import param
 from param import args
 from collections import defaultdict
-import nni
+#import nni
 from param import params
 
 class BaseAgent(object):
@@ -239,64 +239,82 @@ class Seq2SeqAgent(BaseAgent):
                     a[i] = len(ob['candidate'])
         return torch.from_numpy(a).cuda()
 
-    def make_equiv_action(self, a_t, perm_obs, perm_idx=None, traj=None):
+    # def make_equiv_action(self, a_t, perm_obs, perm_idx=None, traj=None):
+    #     """
+    #     Interface between Panoramic view and Egocentric view 
+    #     It will convert the action panoramic view action a_t to equivalent egocentric view actions for the simulator
+    #     """
+    #     if perm_idx is None:
+    #         perm_idx = range(len(perm_obs))
+    #     actions = [[]] * self.env.batch_size # batch * action_len
+    #     max_len = 0 # for padding stop action
+    #     for i, idx in enumerate(perm_idx):
+    #         action = a_t[i]
+    #         if action != -1:            # -1 is the <stop> action
+    #             select_candidate = perm_obs[i]['candidate'][action]
+    #             src_point = perm_obs[i]['viewIndex']
+    #             trg_point = select_candidate['pointId']
+    #             src_level = (src_point) // 12   # The point idx started from 0
+    #             trg_level = (trg_point) // 12
+    #             src_heading = (src_point) % 12
+    #             trg_heading = (trg_point) % 12
+    #             # adjust elevation
+    #             if trg_level > src_level:
+    #                 actions[idx] = actions[idx] + [self.env_actions['up']] * int(trg_level - src_level)
+    #             elif trg_level < src_level:
+    #                 actions[idx] = actions[idx] + [self.env_actions['down']] * int(src_level - trg_level)
+    #             # adjust heading
+    #             if trg_heading > src_heading:
+    #                 dif = trg_heading - src_heading
+    #                 if dif >= 6: # turn left
+    #                     actions[idx] = actions[idx] + [self.env_actions['left']] * int(12 - dif)
+    #                 else: # turn right
+    #                     actions[idx] = actions[idx] + [self.env_actions['right']] * int(dif)
+    #             elif trg_heading < src_heading:
+    #                 dif = src_heading - trg_heading
+    #                 if dif >=6: # turn right
+    #                     actions[idx] = actions[idx] + [self.env_actions['right']] * int(12 - dif)
+    #                 else: # turn left
+    #                     actions[idx] = actions[idx] + [self.env_actions['left']] * int(dif)
+
+    #             actions[idx] = actions[idx] + [(select_candidate['idx'], 0, 0)]
+    #             max_len = max(max_len, len(actions[idx]))
+
+    #     for idx in perm_idx:
+    #         if len(actions[idx]) < max_len:
+    #             actions[idx] = actions[idx] + [self.env_actions['<end>']] * (max_len - len(actions[idx]))
+    #     actions = np.array(actions, dtype = 'float32')
+
+    #     for i in range(max_len):
+    #         cur_actions = actions[:,i]
+    #         cur_actions = list(cur_actions)
+    #         cur_actions = [tuple(a) for a in cur_actions]
+    #         self.env.env.makeActions(cur_actions)
+        
+    #     if traj is not None:
+    #         state = self.env.env.sim.getState()
+    #         for i, idx in enumerate(perm_idx):
+    #             action = a_t[i]
+    #             if action != -1:
+    #                 traj[i]['path'].append((state[idx].location.viewpointId, state[idx].heading, state[idx].elevation))
+
+    def make_equiv_action(self, a_t, obs, perm_idx, traj=None):
         """
-        Interface between Panoramic view and Egocentric view 
+        Interface between Panoramic view and Egocentric view
         It will convert the action panoramic view action a_t to equivalent egocentric view actions for the simulator
         """
-        if perm_idx is None:
-            perm_idx = range(len(perm_obs))
-        actions = [[]] * self.env.batch_size # batch * action_len
-        max_len = 0 # for padding stop action
-        for i, idx in enumerate(perm_idx):
-            action = a_t[i]
-            if action != -1:            # -1 is the <stop> action
-                select_candidate = perm_obs[i]['candidate'][action]
-                src_point = perm_obs[i]['viewIndex']
-                trg_point = select_candidate['pointId']
-                src_level = (src_point) // 12   # The point idx started from 0
-                trg_level = (trg_point) // 12
-                src_heading = (src_point) % 12
-                trg_heading = (trg_point) % 12
-                # adjust elevation
-                if trg_level > src_level:
-                    actions[idx] = actions[idx] + [self.env_actions['up']] * int(trg_level - src_level)
-                elif trg_level < src_level:
-                    actions[idx] = actions[idx] + [self.env_actions['down']] * int(src_level - trg_level)
-                # adjust heading
-                if trg_heading > src_heading:
-                    dif = trg_heading - src_heading
-                    if dif >= 6: # turn left
-                        actions[idx] = actions[idx] + [self.env_actions['left']] * int(12 - dif)
-                    else: # turn right
-                        actions[idx] = actions[idx] + [self.env_actions['right']] * int(dif)
-                elif trg_heading < src_heading:
-                    dif = src_heading - trg_heading
-                    if dif >=6: # turn right
-                        actions[idx] = actions[idx] + [self.env_actions['right']] * int(12 - dif)
-                    else: # turn left
-                        actions[idx] = actions[idx] + [self.env_actions['left']] * int(dif)
-
-                actions[idx] = actions[idx] + [(select_candidate['idx'], 0, 0)]
-                max_len = max(max_len, len(actions[idx]))
-
-        for idx in perm_idx:
-            if len(actions[idx]) < max_len:
-                actions[idx] = actions[idx] + [self.env_actions['<end>']] * (max_len - len(actions[idx]))
-        actions = np.array(actions, dtype = 'float32')
-
-        for i in range(max_len):
-            cur_actions = actions[:,i]
-            cur_actions = list(cur_actions)
-            cur_actions = [tuple(a) for a in cur_actions]
-            self.env.env.makeActions(cur_actions)
-        
-        if traj is not None:
-            state = self.env.env.sim.getState()
-            for i, idx in enumerate(perm_idx):
-                action = a_t[i]
-                if action != -1:
-                    traj[i]['path'].append((state[idx].location.viewpointId, state[idx].heading, state[idx].elevation))
+        new_action_current = a_t.copy()
+        if perm_idx is not None:
+            for i,idx in enumerate(perm_idx):
+                new_action_current[idx] = a_t[i]
+        try:
+            self.env.env.makeActions(new_action_current+1)
+        except:
+            import ipdb;ipdb.set_trace()
+        for i,ob in enumerate(obs):
+            state = self.env.env.sims[perm_idx[i]]
+            if traj is not None:
+                traj[i]['path'].append((state.viewpointId, state.heading, state.elevation))
 
     def rollout(self, train_ml=None, train_rl=True, reset=True, speaker=None):
         """

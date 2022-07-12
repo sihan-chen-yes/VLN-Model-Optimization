@@ -2,7 +2,7 @@
 
 import sys
 sys.path.append('buildpy36')
-import MatterSim
+#import MatterSim
 import csv
 import numpy as np
 import math
@@ -13,12 +13,23 @@ import os
 import random
 import networkx as nx
 from param import args
-
+from collections import namedtuple, defaultdict
 from utils import load_datasets, load_nav_graphs, Tokenizer
-
+angle_inc = np.pi / 6.
+ANGLE_INC = np.pi / 6.
+def structured_map(function, *args, **kwargs):
+    #assert all(len(a) == len(args[0]) for a in args[1:])
+    nested = kwargs.get('nested', False)
+    acc = []
+    for t in zip(*args):
+        if nested:
+            mapped = [function(*inner_t) for inner_t in zip(*t)]
+        else:
+            mapped = function(*t)
+        acc.append(mapped)
+    return acc
 csv.field_size_limit(sys.maxsize)
-
-
+WorldState = namedtuple("WorldState", ["scanId", "viewpointId","viewIndex","heading", "elevation","x","y","z"])
 class EnvBatch():
     ''' A simple wrapper for a batch of MatterSim environments, 
         using discretized viewpoints and pretrained features '''
@@ -50,23 +61,31 @@ class EnvBatch():
             self.feature_size = 512
         else:
             self.featurized_scans = set([key.split("_")[0] for key in list(self.features.keys())])
-        self.batch_size = batch_size
-        self.sim = MatterSim.Simulator()
-        self.sim.setRenderingEnabled(False)
-        self.sim.setDiscretizedViewingAngles(True)
-        self.sim.setBatchSize(self.batch_size)
-        self.sim.setCameraResolution(self.image_w, self.image_h)
-        self.sim.setCameraVFOV(math.radians(self.vfov))
-        self.sim.initialize()
+        adj_dict = json.load(open("./datasets/total_adj_list.json",'r'))
+        self.adj_dict = adj_dict
+        self.graphs = load_nav_graphs(self.featurized_scans)
+        assert adj_dict is not None, "Error! No adjacency dictionary!"
+
 
     def _make_id(self, scanId, viewpointId):
         return scanId + '_' + viewpointId   
 
-    def newEpisodes(self, scanIds, viewpointIds, headings, elevations=None):
-        if elevations == None:
-            self.sim.newEpisode(scanIds, viewpointIds, headings, [0]*self.batch_size)
-        else:
-            self.sim.newEpisode(scanIds, viewpointIds, headings, elevations)
+    def newEpisodes(self, scanIds, viewpointIds, headings, elevation=None):
+        def f(scan_id, viewpoint_id, heading):
+            position =  self.graphs[scan_id].node[viewpoint_id]['position']
+            elevation = 0
+            view_index = (12 * round(elevation / ANGLE_INC + 1)
+                          + round(heading / ANGLE_INC) % 12)
+            
+            return WorldState(scanId=scan_id,
+                              viewpointId=viewpoint_id,
+                              viewIndex=view_index,
+                              heading=heading,
+                              elevation=elevation,
+                              x = position[0],
+                              y = position[1],
+                              z = position[2])
+        self.sims = structured_map(f, scanIds, viewpointIds, headings)
   
     def getStates(self):
         """
@@ -76,27 +95,121 @@ class EnvBatch():
         :return: [ ((30, 2048), sim_state) ] * batch_size
         """
         feature_states = []
-        for state in self.sim.getState():
-            long_id = self._make_id(state.scanId, state.location.viewpointId)
+        for i, sim in enumerate(self.sims):
+            long_id = self._make_id(sim.scanId, sim.viewpointId)
             if self.features is not None:
                 feature = self.features[long_id]
                 # feature = self.features[long_id][state.viewIndex,:]
-                feature_states.append((feature, state))
+                feature_states.append((feature, sim))
             else:
-                feature_states.append((None, state))
+                feature_states.append((None, sim))
         return feature_states
 
-    def makeActions(self, actions):
-        ''' Take an action using the full state dependent action interface (with batched input). 
+    def get_adjs(self, world_states):
+        def f(world_state):
+            query = '_'.join([world_state.scanId,
+                              world_state.viewpointId,
+                              str(world_state.viewIndex)])
+            return self.adj_dict[query]
+        return structured_map(f, world_states)
+
+    def makeActions(self, actions, attrs=None):
+        ''' Take an action using the full state dependent action interface (with batched input).
             Every action element should be an (index, heading, elevation) tuple. '''
-        ix = []
-        heading = []
-        elevation = []
-        for i,h,e in actions:
-            ix.append(int(i))
-            heading.append(float(h))
-            elevation.append(float(e))
-        self.sim.makeAction(ix, heading, elevation)
+        if attrs is None:
+            attrs = self.get_adjs(self.sims)
+        def f(world_state, action, loc_attrs):
+            if action == 0 or action < 0:
+                return world_state
+            else:
+                loc_attr = loc_attrs[action]
+                location = self.graphs[world_state.scanId].node[loc_attr['nextViewpointId']]['position']
+                return WorldState(scanId=world_state.scanId,
+                                  viewpointId=loc_attr['nextViewpointId'],
+                                  viewIndex=loc_attr['absViewIndex'],
+                                  heading=(
+                                      loc_attr['absViewIndex'] % 12) * ANGLE_INC,
+                                  elevation=(
+                                      loc_attr['absViewIndex'] // 12 - 1)
+                                  * ANGLE_INC,
+                                  x = location[0],
+                                  y = location[1],
+                                  z = location[2])
+        world_states = self.sims
+        world_states =  structured_map(f, world_states, actions, attrs)
+        self.sims = world_states
+
+class Simulator(object):
+
+    def __init__(self, scans = None):
+        """
+        1. Load pretrained image feature
+        2. Init the Simulator.
+        :param feat_db: The name of file stored the feature.
+        :param batch_size:  Used to create the simulator list.
+        """
+        #TODO copy the adj_file from 98
+        adj_dict = json.load(open("./datasets/total_adj_list.json",'r'))
+        self.adj_dict = adj_dict
+        self.graphs = load_nav_graphs(scans)
+        #self.label_set = json.load(open('data/labels/all_labels.json'))
+        #self.label_set = load_datas()
+        #self.room_label = json.load(open('data/labels/reverie_room/house_pano_info.json'))
+        assert adj_dict is not None, "Error! No adjacency dictionary!"
+
+    def _make_id(self, scanId, viewpointId):
+        return scanId + '_' + viewpointId
+
+    def newEpisode(self, scan_id, viewpoint_id, heading):
+        elevation = 0
+        view_index = (12 * round(elevation / ANGLE_INC + 1)
+                        + round(heading / ANGLE_INC) % 12)
+        location = self.graphs[scan_id].node[viewpoint_id]['position']
+        self.state =  WorldState(scanId=scan_id,
+                            viewpointId=viewpoint_id,
+                            viewIndex=view_index,
+                            heading=heading,
+                            elevation=elevation,
+                            x = location[0],
+                            y = location[1],
+                            z = location[2])
+    def getState(self):
+        """
+        Get list of states augmented with precomputed image features. rgb field will be empty.
+        Agent's current view [0-35] (set only when viewing angles are discretized)
+            [0-11] looking down, [12-23] looking at horizon, [24-35] looking up
+        :return: [ ((36, 2048), sim_state) ] * batch_size
+        """
+        return self.state
+    def get_adjs(self, world_state=None):
+        if world_state ==None:
+            world_state = self.state
+        query = '_'.join([world_state.scanId,
+                            world_state.viewpointId,
+                            str(world_state.viewIndex)])
+        return self.adj_dict[query]
+    def makeActions(self, action, loc_attrs=None):
+        ''' Take an action using the full state dependent action interface (with batched input).
+            Every action element should be an (index, heading, elevation) tuple. '''
+        if loc_attrs is None:
+           loc_attrs =  self.get_adjs(self.state)
+        if action == 0:
+            return world_state
+        else:
+            loc_attr = loc_attrs[action]
+            location = self.graphs[world_state.scanId][loc_attr['nextViewpointId']]['position']
+            self.state = WorldState(scanId=world_state.scanId,
+                                viewpointId=loc_attr['nextViewpointId'],
+                                viewIndex=loc_attr['absViewIndex'],
+                                heading=(
+                                    loc_attr['absViewIndex'] % 12) * ANGLE_INC,
+                                elevation=(
+                                    loc_attr['absViewIndex'] // 12 - 1)
+                                * ANGLE_INC,
+                                x = location[0],
+                                y = location[1],
+                                z = location[2])
+
 
 class R2RBatch():
     ''' Implements the Room to Room navigation task, using discretized viewpoints and pretrained features '''
@@ -147,7 +260,7 @@ class R2RBatch():
         self._load_nav_graphs()
 
         self.angle_feature = utils.get_all_point_angle_feature()
-        self.sim = utils.new_simulator()
+        self.sim = Simulator(self.scans)
         self.buffered_state_dict = {}
 
         # near point
@@ -219,15 +332,15 @@ class R2RBatch():
 
     def _shortest_path_action(self, state, goalViewpointId):
         ''' Determine next action on the shortest path to goal, for supervised training. '''
-        if state.location.viewpointId == goalViewpointId:
+        if state.viewpointId == goalViewpointId:
             return goalViewpointId      # Just stop here
-        path = self.paths[state.scanId][state.location.viewpointId][goalViewpointId]
+        path = self.paths[state.scanId][state.viewpointId][goalViewpointId]
         nextViewpointId = path[1]
         return nextViewpointId
 
     def make_candidate(self, feature, scanId, viewpointId, viewId):
         def _loc_distance(loc):
-            return np.sqrt(loc.rel_heading ** 2 + loc.rel_elevation ** 2)
+            return np.sqrt(loc['rel_heading'] ** 2 + loc['rel_elevation'] ** 2)
         def _get_near(v, base_heading):
             def _np_angle_feature(heading, elevation):
                 e_heading = np.expand_dims(heading, axis=1)
@@ -259,93 +372,69 @@ class R2RBatch():
         base_heading = (viewId % 12) * math.radians(30)
         adj_dict = {}
         long_id = "%s_%s" % (scanId, viewpointId)
-        if long_id not in self.buffered_state_dict:
-            for ix in range(36):
-                if ix == 0:
-                    self.sim.newEpisode([scanId], [viewpointId], [0], [math.radians(-30)])
-                elif ix % 12 == 0:
-                    self.sim.makeAction([0], [1.0], [1.0])
-                else:
-                    self.sim.makeAction([0], [1.0], [0])
+        # if long_id not in self.buffered_state_dict:
+        #     for ix in range(36):
+        #         if ix == 0:
+        #             self.sim.newEpisode([scanId], [viewpointId], [0], [math.radians(-30)])
+        #         elif ix % 12 == 0:
+        #             self.sim.makeAction([0], [1.0], [1.0])
+        #         else:
+        #             self.sim.makeAction([0], [1.0], [0])
 
-                state = self.sim.getState()[0]
-                assert state.viewIndex == ix
+        #         state = self.sim.getState()[0]
+        #         assert state.viewIndex == ix
 
-                # Heading and elevation for the viewpoint center
-                heading = state.heading - base_heading
-                elevation = state.elevation
+        #         # Heading and elevation for the viewpoint center
+        #         heading = state.heading - base_heading
+        #         elevation = state.elevation
 
-                visual_feat = feature[ix]
+        #         visual_feat = feature[ix]
 
                 # get adjacent locations
-                for j, loc in enumerate(state.navigableLocations[1:]):
-                    # if a loc is visible from multiple view, use the closest
-                    # view (in angular distance) as its representation
-                    distance = _loc_distance(loc)
+        self.sim.newEpisode(scanId, viewpointId, base_heading)
+        navigableLocations = self.sim.get_adjs()
+        for j, loc in enumerate(navigableLocations[1:]):
+            # if a loc is visible from multiple view, use the closest
+            # view (in angular distance) as its representation
+            #distance = _loc_distance(loc)
 
-                    # Heading and elevation for for the loc
-                    loc_heading = heading + loc.rel_heading
-                    loc_elevation = elevation + loc.rel_elevation
-                    angle_feat = utils.angle_feature(loc_heading, loc_elevation)
-                    if (loc.viewpointId not in adj_dict or
-                            distance < adj_dict[loc.viewpointId]['distance']):
-                        adj_dict[loc.viewpointId] = {
-                            'heading': loc_heading,
-                            'elevation': loc_elevation,
-                            "normalized_heading": state.heading + loc.rel_heading,
-                            'scanId':scanId,
-                            'viewpointId': loc.viewpointId, # Next viewpoint id
-                            'pointId': ix,
-                            'distance': distance,
-                            'idx': j + 1,
-                            'angle_feat': angle_feat,
-                            'visual_feat': visual_feat,
-                        }
-            for k,v in adj_dict.items():
-                adj_dict[k]['obj_class'] = self.obj_dict[scanId][viewpointId][v['pointId']]['object_class'][:args.top_N_obj]
-                near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class,near_view_id = _get_near(v, base_heading)
-                adj_dict[k]['near_pointId'] = near_pointId
-                adj_dict[k]['near_mask'] = near_mask
-                adj_dict[k]['near_visual_feat'] = near_visual_feat
-                adj_dict[k]['near_angle_feat'] = near_angle_feat
-                adj_dict[k]['near_edge_feat'] = near_edge_feat    
-                adj_dict[k]['near_obj_class'] = near_obj_class
-                adj_dict[k]['near_view_id'] = near_view_id
+            # Heading and elevation for for the loc
+            loc_heading = loc['rel_heading']
+            loc_elevation = loc['rel_elevation']
+            angle_feat = utils.angle_feature(loc_heading, loc_elevation)
+            visual_feat = feature[loc['absViewIndex']]
+            adj_dict[loc['nextViewpointId']] = {
+                'heading': loc_heading,
+                'elevation': loc_elevation,
+                "normalized_heading": base_heading + loc_heading,
+                'scanId':scanId,
+                'viewpointId': loc['nextViewpointId'], # Next viewpoint id
+                'pointId': loc['absViewIndex'],
+                #'distance': distance,
+                'idx': j + 1,
+                'angle_feat': angle_feat,
+                'visual_feat': visual_feat,
+            }
+        for k,v in adj_dict.items():
+            adj_dict[k]['obj_class'] = self.obj_dict[scanId][viewpointId][v['pointId']]['object_class'][:args.top_N_obj]
+            near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class,near_view_id = _get_near(v, base_heading)
+            adj_dict[k]['near_pointId'] = near_pointId
+            adj_dict[k]['near_mask'] = near_mask
+            adj_dict[k]['near_visual_feat'] = near_visual_feat
+            adj_dict[k]['near_angle_feat'] = near_angle_feat
+            adj_dict[k]['near_edge_feat'] = near_edge_feat    
+            adj_dict[k]['near_obj_class'] = near_obj_class
+            adj_dict[k]['near_view_id'] = near_view_id
 
-            candidate = list(adj_dict.values())
-            self.buffered_state_dict[long_id] = [
-                {key: c[key]
-                 for key in
-                    ['normalized_heading', 'elevation', 'scanId', 'viewpointId',
-                     'pointId', 'idx']}
-                for c in candidate
-            ]
-            return candidate
-        else:
-            candidate = self.buffered_state_dict[long_id]
-            candidate_new = []
-            for c in candidate:
-                c_new = c.copy()
-                ix = c_new['pointId']
-                normalized_heading = c_new['normalized_heading']
-                visual_feat = feature[ix]
-                loc_heading = normalized_heading - base_heading
-                c_new['heading'] = loc_heading
-                angle_feat = utils.angle_feature(c_new['heading'], c_new['elevation'])
-                c_new['angle_feat'] = angle_feat
-                c_new['visual_feat'] = visual_feat
-                c_new.pop('normalized_heading')
-                c_new['obj_class'] = self.obj_dict[scanId][viewpointId][ix]['object_class'][:args.top_N_obj]
-                near_pointId, near_mask, near_visual_feat, near_angle_feat, near_edge_feat, near_obj_class,near_view_id = _get_near(c_new, base_heading)
-                c_new['near_pointId'] = near_pointId
-                c_new['near_mask'] = near_mask
-                c_new['near_visual_feat'] = near_visual_feat
-                c_new['near_angle_feat'] = near_angle_feat
-                c_new['near_edge_feat'] = near_edge_feat 
-                c_new['near_obj_class'] = near_obj_class
-                c_new['near_view_id'] = near_view_id
-                candidate_new.append(c_new)
-            return candidate_new
+        candidate = list(adj_dict.values())
+        self.buffered_state_dict[long_id] = [
+            {key: c[key]
+                for key in
+                ['normalized_heading', 'elevation', 'scanId', 'viewpointId',
+                    'pointId', 'idx']}
+            for c in candidate
+        ]
+        return candidate
    
     def _get_obs(self):
         obs = []
@@ -354,20 +443,20 @@ class R2RBatch():
             base_view_id = state.viewIndex
 
             # Full features
-            candidate = self.make_candidate(feature, state.scanId, state.location.viewpointId, state.viewIndex)
+            candidate = self.make_candidate(feature, state.scanId, state.viewpointId, state.viewIndex)
 
             # (visual_feature, angel_feature) for views
             feature = np.concatenate((feature, self.angle_feature[base_view_id]), -1)
             obs.append({
                 'instr_id' : item['instr_id'],
                 'scan' : state.scanId,
-                'viewpoint' : state.location.viewpointId,
+                'viewpoint' : state.viewpointId,
                 'viewIndex' : state.viewIndex,
                 'heading' : state.heading,
                 'elevation' : state.elevation,
                 'feature' : feature,
                 'candidate': candidate,
-                'navigableLocations' : state.navigableLocations,
+                'navigableLocations' : self.sim.get_adjs(state),
                 'instructions' : item['instructions'],
                 'teacher' : self._shortest_path_action(state, item['path'][-1]),
                 'gt_path': item['path'],
@@ -376,7 +465,7 @@ class R2RBatch():
             if 'instr_encoding' in item:
                 obs[-1]['instr_encoding'] = item['instr_encoding']
             # A2C reward. The negative distance between the state and the final state
-            obs[-1]['distance'] = self.distances[state.scanId][state.location.viewpointId][item['path'][-1]]
+            obs[-1]['distance'] = self.distances[state.scanId][state.viewpointId][item['path'][-1]]
         return obs
 
     def reset(self, batch=None, inject=False, **kwargs):

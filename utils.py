@@ -4,7 +4,7 @@ import os
 import sys
 import re
 sys.path.append('build')
-import MatterSim
+# import MatterSim
 import string
 import json
 import time
