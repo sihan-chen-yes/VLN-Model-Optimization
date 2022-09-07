@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-import nni
+#import nni
 
 class Param:
     def __init__(self):
@@ -140,5 +140,5 @@ params = {
     'gcn_dim': args.gcn_dim,
     'mlWeight': args.mlWeight
 }
-optimized_params = nni.get_next_parameter()
-params.update(optimized_params)
+#optimized_params = nni.get_next_parameter()
+#params.update(optimized_params)

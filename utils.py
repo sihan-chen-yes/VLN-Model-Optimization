@@ -326,45 +326,47 @@ def angle_feature(heading, elevation):
                         math.sin(elevation), math.cos(elevation)] * (args.angle_feat_size // 4),
                         dtype=np.float32)
 
-def new_simulator():
-    import MatterSim
-    # Simulator image parameters
-    WIDTH = 640
-    HEIGHT = 480
-    VFOV = 60
+# def new_simulator():
+#     # import MatterSim
+#     # Simulator image parameters
+#     WIDTH = 640
+#     HEIGHT = 480
+#     VFOV = 60
 
-    sim = MatterSim.Simulator()
-    sim.setRenderingEnabled(False)
-    sim.setCameraResolution(WIDTH, HEIGHT)
-    sim.setCameraVFOV(math.radians(VFOV))
-    sim.setDiscretizedViewingAngles(True)
-    sim.initialize()
+#     sim = MatterSim.Simulator()
+#     sim.setRenderingEnabled(False)
+#     sim.setCameraResolution(WIDTH, HEIGHT)
+#     sim.setCameraVFOV(math.radians(VFOV))
+#     sim.setDiscretizedViewingAngles(True)
+#     sim.initialize()
 
-    return sim
+#     return sim
 
-def get_point_angle_feature(baseViewId=0):
-    sim = new_simulator()
+# def get_point_angle_feature(baseViewId=0):
+#     sim = new_simulator()
 
-    feature = np.empty((36, args.angle_feat_size), np.float32)
-    base_heading = (baseViewId % 12) * math.radians(30)
-    for ix in range(36):
-        if ix == 0:
-            sim.newEpisode(['ZMojNkEp431'], ['2f4d90acd4024c269fb0efe49a8ac540'], [0], [math.radians(-30)])
-        elif ix % 12 == 0:
-            sim.makeAction([0], [1.0], [1.0])
-        else:
-            sim.makeAction([0], [1.0], [0])
+#     feature = np.empty((36, args.angle_feat_size), np.float32)
+#     base_heading = (baseViewId % 12) * math.radians(30)
+#     for ix in range(36):
+#         if ix == 0:
+#             sim.newEpisode(['ZMojNkEp431'], ['2f4d90acd4024c269fb0efe49a8ac540'], [0], [math.radians(-30)])
+#         elif ix % 12 == 0:
+#             sim.makeAction([0], [1.0], [1.0])
+#         else:
+#             sim.makeAction([0], [1.0], [0])
 
-        state = sim.getState()[0]
-        assert state.viewIndex == ix
+#         state = sim.getState()[0]
+#         assert state.viewIndex == ix
 
-        heading = state.heading - base_heading
+#         heading = state.heading - base_heading
 
-        feature[ix, :] = angle_feature(heading, state.elevation)
-    return feature
+#         feature[ix, :] = angle_feature(heading, state.elevation)
+#     return feature
 
 def get_all_point_angle_feature():
-    return [get_point_angle_feature(baseViewId) for baseViewId in range(36)]
+    with open('img_features/all_point_angle_feature.pkl', 'rb') as f:
+        angle_feature = pickle.load(f)
+    return angle_feature
 
 
 def add_idx(inst):

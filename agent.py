@@ -121,7 +121,7 @@ class Seq2SeqAgent(BaseAgent):
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=params['lr'])
         #TODO
         self.optimizers = (self.decoder_optimizer, self.critic_optimizer)
-        #TODO
+        #TODO critic_object_optimzer bug here!
         self.critic_object_optimizer = args.optimizer(self.critic_object.parameters(), lr=params['lr'])
 
         # Evaluations
@@ -137,7 +137,7 @@ class Seq2SeqAgent(BaseAgent):
     def _sort_batch(self, obs):
         ''' Extract instructions from a list of observations and sort by descending
             sequence length (to enable PyTorch packing). '''
-
+        #ob for each agent 
         seq_tensor = np.array([ob['instr_encoding'] for ob in obs])
         seq_lengths = np.argmax(seq_tensor == padding_idx, axis=1)
         seq_lengths[seq_lengths == 0] = seq_tensor.shape[1]     # Full length
@@ -156,6 +156,8 @@ class Seq2SeqAgent(BaseAgent):
 
     def _feature_variable(self, obs):
         ''' Extract precomputed features into variable. '''
+        #get visual feat
+        #views == 36 == 3 * 12
         features = np.empty((len(obs), args.views, args.visual_feat_size + args.angle_feat_size), dtype=np.float32)
         for i, ob in enumerate(obs):
             features[i, :, :] = ob['feature']   # Image feat
@@ -163,6 +165,7 @@ class Seq2SeqAgent(BaseAgent):
 
     def _candidate_variable(self, obs):
         cand_leng = [len(ob['candidate']) + 1 for ob in obs]       # +1 is for the end
+        #get greatest number of possible views and + 1 for end op
         max_cand_leng = max(cand_leng)
 
         cand_visual_feat = np.zeros((len(obs), max_cand_leng, args.visual_feat_size), dtype=np.float32)
@@ -313,6 +316,7 @@ class Seq2SeqAgent(BaseAgent):
             import ipdb;ipdb.set_trace()
         for i,ob in enumerate(obs):
             state = self.env.env.sims[perm_idx[i]]
+            #traj:batch
             if traj is not None:
                 traj[i]['path'].append((state.viewpointId, state.heading, state.elevation))
 
@@ -363,14 +367,9 @@ class Seq2SeqAgent(BaseAgent):
             word_level_features,sent_level_features, ctx_mask = self.CLIP_language(row_text)
             word_level_features = word_level_features.float()
             sent_level_features = sent_level_features.float()
-        # if max_length != seq_lengths[0]:
-        #     print(perm_obs[0]['instructions'])
-        #     print(seq[0])
-        #     print(seq_mask[0])
-        #     print(max_length)
-        #     print(seq_lengths[0])
         ctx, h_t, c_t = self.encoder(word_level_features,sent_level_features)
-        self.decoder.egcn.init_weights(h_t.detach())
+        #TODO need mapper here!
+        self.decoder.SEM.init_weights(h_t.detach())
         # Record starting point
         traj = [{
             'instr_id': ob['instr_id'],
@@ -402,6 +401,7 @@ class Seq2SeqAgent(BaseAgent):
         h1 = h_t
         input_a_t = torch.zeros([len(obs), args.angle_feat_size]).cuda()
         for t in range(self.episode_len):
+            #this step
             _, f_t, \
             cand_leng, cand_visual_feat, cand_angle_feat, cand_obj_feat, \
             near_visual_mask, near_visual_feat, near_angle_feat, \
@@ -417,17 +417,24 @@ class Seq2SeqAgent(BaseAgent):
                                                h_t, h1, c_t,
                                                ctx, ctx_mask,
                                                already_dropfeat=(speaker is not None))
+            #policy_score:mean of topK_scores  batch 
             policy_score_probs.append(score_policy)
+            #h_t:batch rnn_dim
             hidden_states.append(h_t)
+            #scorer:batch gcn_dim
             scorers.append(scorer)
+            #entropy_object:batch
             entropys_object.append(entropy_object)
             # Mask outputs where agent can't move forward
             # Here the logit is [b, max_candidate]
             candidate_mask = utils.length2mask(cand_leng)
+            #logit:batch cand_len
             logit.masked_fill_(candidate_mask, -float('inf'))
 
-            # Supervised training
+            # Supervised training 
+            #target:batch
             target = self._teacher_action(perm_obs, ended)
+            #IL training
             ml_loss += self.criterion(logit, target)
 
             # Determine next model inputs
@@ -436,7 +443,9 @@ class Seq2SeqAgent(BaseAgent):
             elif self.feedback == 'argmax': 
                 _, a_t = logit.max(1)        # student forcing - argmax
                 a_t = a_t.detach()
+                #probability
                 log_probs = F.log_softmax(logit, 1)                              # Calculate the log_prob here
+                #log_probs:batch
                 policy_log_probs.append(log_probs.gather(1, a_t.unsqueeze(1)))   # Gather the log_prob for each batch
             elif self.feedback == 'sample':
                 probs = F.softmax(logit, 1)    # sampling an action from model
@@ -457,12 +466,16 @@ class Seq2SeqAgent(BaseAgent):
                     cpu_a_t[i] = -1             # Change the <end> and ignore action to -1
 
             # Make action and get the new state
+            #cand == action
+            #len(a_t) == batch
             input_a_t = []
             for i,a in enumerate(cpu_a_t):
+                #not end
                 if a!=-1:
                     input_a_t.append(cand_angle_feat[i,a,:])
                 else:
                     input_a_t.append(torch.zeros(args.angle_feat_size).cuda())
+            #input_a_t:batch angle_feat_size
             input_a_t = torch.stack(input_a_t)
             self.make_equiv_action(cpu_a_t, perm_obs, perm_idx, traj)
             obs = np.array(self.env._get_obs())
@@ -475,8 +488,11 @@ class Seq2SeqAgent(BaseAgent):
                 reward = np.zeros(batch_size, np.float32)
                 mask = np.ones(batch_size, np.float32)
                 for i, ob in enumerate(perm_obs):
+                #for each agent
                     dist[i] = ob['distance']
+                    #get path 
                     path_act = [vp[0] for vp in traj[i]['path']]
+                    #cal ndtw between path and gt_path
                     ndtw_score[i] = self.ndtw_criterion[ob['scan']](path_act, ob['gt_path'], metric='ndtw')
 
                     if ended[i]:            # If the action is already finished BEFORE THIS ACTION.
@@ -503,19 +519,27 @@ class Seq2SeqAgent(BaseAgent):
                                 raise NameError("The action doesn't change the move")
                             if (last_dist[i] <= 1.0) and (dist[i]-last_dist[i] > 0.0):
                                 reward[i] -= (1.0 - last_dist[i]) * 2.0
+                #reward:batch
                 rewards.append(reward)
+                #mask:batch
                 masks.append(mask)
+                #dist:batch
                 last_dist[:] = dist
+                #ndtw:batch
                 last_ndtw[:] = ndtw_score
 
             # Update the finished actions
             # -1 means ended or ignored (already ended)
+            #ened || (cpu_a_t == -1)
+            #ended:batch
+            #cpu_at:batch -1 means ending
             ended[:] = np.logical_or(ended, (cpu_a_t == -1))
 
             # Early exit if all ended
             if ended.all(): 
+                #break episode iter
                 break
-
+        #episode over calculate loss
         if train_rl:
             # Last action in A2C
             _, f_t, \
@@ -537,7 +561,9 @@ class Seq2SeqAgent(BaseAgent):
             rl_loss = 0.
             # NOW, A2C!!!
             # Calculate the final discounted reward
+            #last_h_:batch rnn_dim
             last_value__ = self.critic(last_h_).detach()    # The value esti of the last state, remove the grad for safety
+            #scorer:batch gcn_dim
             last_value_object = self.critic_object(scorer).detach()
             discount_reward = np.zeros(batch_size, np.float32)  # The inital reward is zero
             discount_reward_object = np.zeros(batch_size, np.float32)
@@ -547,7 +573,10 @@ class Seq2SeqAgent(BaseAgent):
                     discount_reward_object[i] = last_value_object[i]
             length = len(rewards)
             total = 0
+            #inverse iter
+            #for each time step
             for t in range(length-1, -1, -1):
+                #rewards[t]:batch 
                 discount_reward = discount_reward * args.gamma + rewards[t]   # If it ended, the reward will be 0
                 discount_reward_object = discount_reward_object *args.gamma + rewards[t]
                 mask_ = Variable(torch.from_numpy(masks[t]), requires_grad=False).cuda()
@@ -555,8 +584,11 @@ class Seq2SeqAgent(BaseAgent):
                 clip_reward_object = discount_reward_object.copy()
                 r_ = Variable(torch.from_numpy(clip_reward), requires_grad=False).cuda()
                 r_object = Variable(torch.from_numpy(clip_reward_object),requires_grad=False).cuda()
+                #hidden_states[t]:batch rnn_dim
+                #v : batch 
                 v_ = self.critic(hidden_states[t])
                 v_object = self.critic_object(scorers[t])
+                #advantage
                 a_ = (r_ - v_).detach()
                 a_object = (r_object -v_object).detach()
                 # r_: The higher, the better. -ln(p(action)) * (discount_reward - value)
@@ -564,11 +596,12 @@ class Seq2SeqAgent(BaseAgent):
                 rl_loss +=0.2*(-policy_score_probs[t]*a_object*mask_).sum()
                 rl_loss +=(((r_ - v_) ** 2) * mask_).sum() * 0.5     # 1/2 L2 loss
                 rl_loss +=0.2*(((r_object - v_object)**2)*mask_).sum()*0.5
+                #entropy:batch p * logp
                 if self.feedback == 'sample':
                     rl_loss += (-0.01 * entropys[t] * mask_).sum()
                     rl_loss += (-0.01 *entropys_object[t] *mask_).sum()
                 self.logs['critic_loss'].append((((r_ - v_) ** 2) * mask_).sum().item())
-
+                #number of not ended agent
                 total = total + np.sum(masks[t])
             self.logs['total'].append(total)
             # Normalize the loss function
@@ -693,6 +726,7 @@ class Seq2SeqAgent(BaseAgent):
     def load(self, path):
         ''' Loads parameters (but not training state) '''
         states = torch.load(path)
+
         def recover_state(name, model, optimizer):
             state = model.state_dict()
             model_keys = set(state.keys())
@@ -712,5 +746,5 @@ class Seq2SeqAgent(BaseAgent):
         ]
         for param in all_tuple:
             recover_state(*param)
-        return states['encoder']['epoch'] - 1
+        return states['decoder']['epoch'] - 1
 

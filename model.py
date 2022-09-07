@@ -13,7 +13,7 @@ from param import params
 
 
 class ObjEncoder(nn.Module):
-    ''' Encodes object labels using GloVe. '''
+    ''' Encodes object labels'''
 
     def __init__(self, vocab_size, embedding_size, glove_matrix):
         super(ObjEncoder, self).__init__()
@@ -148,7 +148,7 @@ class ASODecoderLSTM(nn.Module):
         self.lstm_out_mapping = nn.Sequential(nn.Linear(args.out_feats+hidden_size,hidden_size),nn.Tanh())
         if args.egcn_activation == 'relu':
             self.activation = torch.nn.RReLU()
-        self.egcn = SEM(args, self.activation)
+        self.SEM = SEM(args, self.activation)
 #        cand attention layer
         self.cand_att_a = SoftDotAttention(hidden_size, hidden_size)
         self.cand_att_s = SoftDotAttention(hidden_size, hidden_size)
@@ -182,76 +182,97 @@ class ASODecoderLSTM(nn.Module):
                 h_0, prev_h1, c_0,
                 ctx, ctx_mask=None,
                 already_dropfeat=False):
-        #16 64 batch action_embs_size
+        '''
+        action:batch angle_feat_size
+
+        feature:batch 36 visual_feat_size + angle_feat_size
+
+        candidate: 
+        cand_visual_feat:batch cand_len visual_feat_size
+        cand_angle_feat:batch cand_len angle_feat_size
+        cand_obj_feat：batch cand_len obj_num obj_feat_size
+
+        neighbor:5 neighbor
+        near_visual_mask:batch cand_len 5 
+        near_visual_feat:batch cand_len 5 visual_feat_size
+        near_angle_feat:batch cand_len 5 angle_feat_size
+        near_obj_mask:batch cand_len 4 obj_num
+        near_obj_feat:batch cand_len 4 obj_num obj_feat_size
+        near_edge_feat:batch cand_len 4 angle_feat_size
+        near_id_feat:batch cand_len 5
+        '''
+        #16 128 -> 16 64  batch angle_feat_size -> batch action_embs_size
         action_embeds = self.action_embedding(action)
         action_embeds = self.drop(action_embeds)
         if not already_dropfeat:
             feature[..., :-args.angle_feat_size] = self.drop_env(feature[..., :-args.angle_feat_size])
             cand_visual_feat = self.drop_env(cand_visual_feat)
             near_visual_feat = self.drop_env(near_visual_feat)
-        #16 10 8 512 batch candiate object_num feat
+        #16 10 8 640 batch cand_len object_num visual_feat_size
         cand_obj_feat = self.drop_env(cand_obj_feat)
-        #16 10 4 8 512 batch candiate neighbor object feat_size
+        #16 10 4 8 640 batch cand_len 4 object visual_feat_size
         near_obj_feat = self.drop_env(near_obj_feat)
-        # 16 10 5 8 512 batch candiate neighbor object feat_size
-        object_graph_feat = torch.cat((cand_obj_feat.unsqueeze(2),near_obj_feat),2)
-        #16 10 5 8 -> 16 10 5 8
+        #16 10 5 8 640 batch candiate 4 + 1 object visual_feat_size
+        object_graph_feat = torch.cat((cand_obj_feat.unsqueeze(2),near_obj_feat),2) 
+        #16 10 5 -> 16 10 5 8
         near_id_feat = near_id_feat.unsqueeze(-1).expand(-1,-1,-1,object_graph_feat.shape[3])
         #16 10 5 128 -> 16 10 5 8 128
         angle_graph_feat = near_angle_feat.unsqueeze(3).expand(-1,-1,-1,object_graph_feat.shape[3],-1)
-        #16 10 5 8 512 -> 16 400 512
+        #16 10 5 8 640 -> 16 400 640 compress
         object_graph_feat = object_graph_feat.reshape(near_obj_feat.shape[0],-1,near_obj_feat.shape[-1])
         #16 10 5 8 128 -> 16 400 128
         angle_graph_feat = angle_graph_feat.reshape(near_angle_feat.shape[0],-1,angle_graph_feat.shape[-1])
         #16 10 5 8 -> 16 400
         near_id_feat = near_id_feat.reshape(near_id_feat.shape[0],-1)
-        #16 400 640
+        #16 400 768 batch cand_len * 5 * obj_num visual_feat_size + angle_feat_size assume cand_len * 5 * obj_num == N
         object_graph_feat = torch.cat((object_graph_feat,angle_graph_feat),2)
         if args.distance_decay_function =='same':
-            #16 400 400
+            #16 400 400 batch N
             adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
         else:
             adj_list = self.compute_adj_list(near_id_feat)
         #16 400
         mask = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1]).cuda()
-        #16 400 640 -> 16 400 512
+        #TODO
+        #16 400 768 -> 16 400 128 batch N visual_feat_size + angle_feat_size ->  batch N gcn_dim
         object_graph_feat = self.object_mapping(object_graph_feat)
-        #16 512
+        #16 640 batch rnn_dim
         prev_h1_drop = self.drop(prev_h1)
-        #feature 16 36 640
-        #16 640
+        #feature 16 36 768 batch 36 visual_feat_size + angle_feat_size
+        #attn_feat 16 768 batch visual_feat_size + angle_feat_size
         attn_feat, _ = self.feat_att_layer(prev_h1_drop, feature, output_tilde=False)
         di = adj_list.sum(dim=1)
         di = di.pow(-1/2)
-        #16 400 400
+        #16 400 400 di -> di / N
         weight = di.unsqueeze(1)*adj_list*di.unsqueeze(-1)
-        #16 400 512
+        #16 400 400 * 16 400 128 * 16 128 128 -> 16 400 128 batch N N batch N gcn_dim batch gcn_dim gcn_dim -> batch N gcn_dim
         node_embs = self.activation(weight.matmul(object_graph_feat.matmul(self.static_weights)))
-        #16 512 batch_size gcn_dim
+        #TODO
+        #16 128 batch_size gcn_dim
         node_feat,_ = self.object_graph_att_in(prev_h1,node_embs,output_tilde=False)
-        #16 64+640+512
+        #16 64 + 640 + 128 + 128 batch action_embs_size + visual_feat_size + angle_feat_size + gcn_dim
         concat_input = torch.cat((action_embeds, attn_feat, node_feat), dim=-1)
-        #16 512 batch hidden_size only cell
+        #16 640 batch rnn_dim
         h_1, c_1 = self.lstm(concat_input, (prev_h1, c_0))
         h_1_drop = self.drop(h_1)
-        #16 512
+        #16 640 batch rnn_dim
         object_h1_drop = h_1_drop
-        #16 64 512
+        #16 77 640 batch L rnn_dim
         object_ctx = ctx.detach()
-        #16 512
+        #16 640 batch rnn_dim
         selector,_, _ = self.topk_att_layer(object_h1_drop,object_ctx,ctx_mask)
         #SEM
-        #16 400 400
-        #16 400 512
-        #16 512
-        #16 400
-        #16 512
-        node_feats,score_policy,scorer,entropy_object = self.egcn(adj_list,object_graph_feat,ctx,mask,selector)
-        #16 5 512 -> 16 5 300
+        #16 400 400 batch N N adj_list
+        #16 400 128 batch N gcn_dim object_graph_feat 
+        #16 77 640 batch L rnn_dim ctx
+        #16 400 batch N
+        #16 640 batch rnn_dim
+        node_feats,score_policy,scorer,entropy_object = self.SEM(adj_list,object_graph_feat,ctx,mask,selector)
+        #16 128 128 -> 16 128 300 batch gcn_dim gcn_dim -> batch gcn_dim out_feats
         node_feats = self.object_mapping_out(node_feats)
-        #16 5 300 -> 16 300
+        #16 300 batch out_feats
         node_feat, _ = self.object_graph_att(h_1_drop,node_feats, output_tilde=False)
-        #16 512+300 -> 16 512
+        #16 640 + 300 -> 16 640  batch rnn_dim + out_feats -> batch rnn_dim
         h_1_drop = self.drop(self.lstm_out_mapping(torch.cat([h_1_drop,node_feat],-1)))
         h_a, u_a, _ = self.action_att_layer(h_1_drop, ctx, ctx_mask)
         h_s, u_s, _ = self.subject_att_layer(h_1_drop, ctx, ctx_mask)

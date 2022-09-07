@@ -25,7 +25,7 @@ import pickle as pkl
 
 from tensorboardX import SummaryWriter
 
-import nni
+#import nni
 from param import params
 
 #os.environ["CUDA_VISIBLE_DEVICES"] = "4"
@@ -241,7 +241,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
                 loss_str += ' %s: %.3f' % (metric, val)
             loss_str += '\n'
 
-        nni.report_intermediate_result(metric_cur_dict)
+        #nni.report_intermediate_result(metric_cur_dict)
 
         for env_name in best_val:
             if best_val[env_name]['update']:
@@ -263,7 +263,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
                 print(env_name, best_val[env_name]['state'])
 
     listner.save(idx, os.path.join("snap", args.name, "state_dict", "LAST_iter%d" % (idx)))
-    nni.report_final_result(metric_best_dict)
+    #nni.report_final_result(metric_best_dict)
 
 def valid(train_env, tok, val_envs={}):
     agent = Seq2SeqAgent(train_env, "", tok, args.maxAction)

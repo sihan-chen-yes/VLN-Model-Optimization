@@ -157,8 +157,8 @@ class Simulator(object):
         #self.room_label = json.load(open('data/labels/reverie_room/house_pano_info.json'))
         assert adj_dict is not None, "Error! No adjacency dictionary!"
 
-    def _make_id(self, scanId, viewpointId):
-        return scanId + '_' + viewpointId
+    # def _make_id(self, scanId, viewpointId):
+    #     return scanId + '_' + viewpointId
 
     def newEpisode(self, scan_id, viewpoint_id, heading):
         elevation = 0
@@ -173,14 +173,14 @@ class Simulator(object):
                             x = location[0],
                             y = location[1],
                             z = location[2])
-    def getState(self):
-        """
-        Get list of states augmented with precomputed image features. rgb field will be empty.
-        Agent's current view [0-35] (set only when viewing angles are discretized)
-            [0-11] looking down, [12-23] looking at horizon, [24-35] looking up
-        :return: [ ((36, 2048), sim_state) ] * batch_size
-        """
-        return self.state
+    # def getState(self):
+    #     """
+    #     Get list of states augmented with precomputed image features. rgb field will be empty.
+    #     Agent's current view [0-35] (set only when viewing angles are discretized)
+    #         [0-11] looking down, [12-23] looking at horizon, [24-35] looking up
+    #     :return: [ ((36, 2048), sim_state) ] * batch_size
+    #     """
+    #     return self.state
     def get_adjs(self, world_state=None):
         if world_state ==None:
             world_state = self.state
@@ -188,27 +188,27 @@ class Simulator(object):
                             world_state.viewpointId,
                             str(world_state.viewIndex)])
         return self.adj_dict[query]
-    def makeActions(self, action, loc_attrs=None):
-        ''' Take an action using the full state dependent action interface (with batched input).
-            Every action element should be an (index, heading, elevation) tuple. '''
-        if loc_attrs is None:
-           loc_attrs =  self.get_adjs(self.state)
-        if action == 0:
-            return world_state
-        else:
-            loc_attr = loc_attrs[action]
-            location = self.graphs[world_state.scanId][loc_attr['nextViewpointId']]['position']
-            self.state = WorldState(scanId=world_state.scanId,
-                                viewpointId=loc_attr['nextViewpointId'],
-                                viewIndex=loc_attr['absViewIndex'],
-                                heading=(
-                                    loc_attr['absViewIndex'] % 12) * ANGLE_INC,
-                                elevation=(
-                                    loc_attr['absViewIndex'] // 12 - 1)
-                                * ANGLE_INC,
-                                x = location[0],
-                                y = location[1],
-                                z = location[2])
+    # def makeActions(self, action, loc_attrs=None):
+    #     ''' Take an action using the full state dependent action interface (with batched input).
+    #         Every action element should be an (index, heading, elevation) tuple. '''
+    #     if loc_attrs is None:
+    #        loc_attrs =  self.get_adjs(self.state)
+    #     if action == 0:
+    #         return world_state
+    #     else:
+    #         loc_attr = loc_attrs[action]
+    #         location = self.graphs[world_state.scanId][loc_attr['nextViewpointId']]['position']
+    #         self.state = WorldState(scanId=world_state.scanId,
+    #                             viewpointId=loc_attr['nextViewpointId'],
+    #                             viewIndex=loc_attr['absViewIndex'],
+    #                             heading=(
+    #                                 loc_attr['absViewIndex'] % 12) * ANGLE_INC,
+    #                             elevation=(
+    #                                 loc_attr['absViewIndex'] // 12 - 1)
+    #                             * ANGLE_INC,
+    #                             x = location[0],
+    #                             y = location[1],
+    #                             z = location[2])
 
 
 class R2RBatch():
