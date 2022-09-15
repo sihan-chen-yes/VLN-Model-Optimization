@@ -267,7 +267,7 @@ class ASODecoderLSTM(nn.Module):
         #16 77 640 batch L rnn_dim ctx
         #16 400 batch N
         #16 640 batch rnn_dim
-        node_feats,score_policy,scorer,entropy_object = self.SEM(adj_list,object_graph_feat,ctx,mask,selector)
+        node_feats,policy_score,scorer,entropy_object = self.SEM(adj_list,object_graph_feat,ctx,mask,selector)
         #16 128 128 -> 16 128 300 batch gcn_dim gcn_dim -> batch gcn_dim out_feats
         node_feats = self.object_mapping_out(node_feats)
         #16 300 batch out_feats
@@ -307,7 +307,7 @@ class ASODecoderLSTM(nn.Module):
         logit = torch.matmul(logit, fusion_weight.unsqueeze(2)).squeeze(2)
         h_tilde = (h_a + h_s + h_o) / 3.
 
-        return h_1, c_1, logit, h_tilde,score_policy,scorer,entropy_object
+        return h_1, c_1, logit, h_tilde,policy_score,scorer,entropy_object
 
 class Critic(nn.Module):
     def __init__(self):

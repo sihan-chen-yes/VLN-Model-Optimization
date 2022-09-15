@@ -22,8 +22,8 @@ class SEM(torch.nn.Module):
         self.reset_param(self.static_weights)
         self.reset_param(self.GCN_init_mapping)
         self.GCN_weights = None
-        # self.evolve_A = nn.Parameter(torch.Tensor(params['batchSize'],args.gcn_topk,args.gcn_topk))
-        # self.reset_param(self.evolve_A)
+        self.evolve_A = nn.Parameter(torch.Tensor(params['batchSize'],params['gcn_dim'], params['gcn_dim']))
+        self.reset_param(self.evolve_A)
 
     def reset_param(self,t):
         #Initialize based on the number of columns
@@ -35,30 +35,33 @@ class SEM(torch.nn.Module):
         ht = self.init_mapping(ht)
         self.GCN_weights = torch.matmul(ht.unsqueeze(-1),self.GCN_init_mapping)
 
-    def forward(self,Ahat,node_embs,word_level_features,mask,ht=None):
-        # #first evolve the weights from the initial and use the new weights with the node_embs
+    def forward(self,Adj_matrix,node_embs,word_level_features,mask,ht=None):
+        #first evolve the weights from the initial and use the new weights with the node_embs
 
-        # #batch gcn_topk gcn_topk
-        # self.evolve_A.data,policy_score,scorer,entropy_object,selected_indexes = self.evolve_weights(self.evolve_A,node_embs,mask,ht)
+        #batch gcn_topk gcn_topk
+        self.evolve_A.data,policy_score,scorer,entropy_object,selected_indexes = self.evolve_weights(self.evolve_A,node_embs,mask,ht)
+        
+        #batch N gcn_dim -> batch gcn_dim gcn_dim
+        node_embs = node_embs.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,node_embs.shape[-1]))
+        #batch L rnn_dim -> batch L gcn_dim
+        word_level_features = self.mapper(word_level_features)
+        #attn between language and obj_feat
+        #batch gcn_dim L
+        attn = node_embs.matmul(word_level_features.permute(0,2,1))
+        #batch gcn_dim gcn_dim
+        attn_A = attn.matmul(attn.permute(0,2,1))
 
-        # #batch len feat_size
-        # word_level_features = self.mapper(word_level_features)
-        # attn = node_embs.matmul(word_level_features.permute(0,2,1))
-        # #batch N N -> batch gcn_topk gcn_topk
-        # attn_A = attn.matmul(attn.permute(0,2,1))
-        # attn_A = attn_A.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,attn_A.shape[-1]))
-        # attn_A = attn_A.gather(2,selected_indexes.unsqueeze(1).expand(-1,attn_A.shape[1],-1))
+        #batch N N -> batch gcn_dim gcn_dim
+        Adj_matrix = Adj_matrix.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,Adj_matrix.shape[-1]))
+        Adj_matrix = Adj_matrix.gather(2,selected_indexes.unsqueeze(1).expand(-1,Adj_matrix.shape[1],-1))
+        di = Adj_matrix.sum(dim=1)
+        di = di.pow(-1/2)
+        # 1 / N
+        Adj_matrix = di.unsqueeze(1)*Adj_matrix*di.unsqueeze(-1).detach()
+        #batch gcn_dim gcn_dim
+        self.evolve_A.data = self.evolve_A + Adj_matrix + attn_A
 
-        # #batch N N -> batch gcn_topk gcn_topk
-        # Ahat = Ahat.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,Ahat.shape[-1]))
-        # Ahat = Ahat.gather(2,selected_indexes.unsqueeze(1).expand(-1,Ahat.shape[1],-1))
-        # di = Ahat.sum(dim=1)
-        # di = di.pow(-1/2)
-        # Ahat = di.unsqueeze(1)*Ahat*di.unsqueeze(-1).detach()
-        # #batch gcn_topk gcn_topk
-        # self.evolve_A.data = self.evolve_A + Ahat + attn_A
-        # node_embs = node_embs.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,node_embs.shape[-1]))
-        # node_embs = self.activation(self.evolve_A.matmul(node_embs.matmul(self.GCN_weights)))
+        node_embs = self.activation(self.evolve_A.matmul(node_embs.matmul(self.GCN_weights)))
 
         # if args.static_gcn_weights:
         #     node_embs1 = self.activation(self.evolve_A.matmul(node_embs.matmul(self.static_weights)))
@@ -66,19 +69,19 @@ class SEM(torch.nn.Module):
         # if args.static_gcn_weights_only:
         #     node_embs1 = self.activation(self.evolve_A.matmul(node_embs.matmul(self.static_weights)))
         #     node_embs = node_embs1
-        # return node_embs,policy_score,scorer,entropy_object
-
-        self.GCN_weights,policy_score,scorer,entropy_object,selected_indexes = self.evolve_weights(self.GCN_weights,node_embs,mask,ht)
-        node_embs = node_embs.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,node_embs.shape[-1]))
-        Ahat = Ahat.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,Ahat.shape[-1]))
-        Ahat = Ahat.gather(2,selected_indexes.unsqueeze(1).expand(-1,Ahat.shape[1],-1))
-        di = Ahat.sum(dim=1)
-        di = di.pow(-1/2)
-        Ahat =  di.unsqueeze(1)*Ahat*di.unsqueeze(-1).detach()
-        node_embs = self.activation(Ahat.matmul(node_embs.matmul(self.GCN_weights)))
-        node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
-        node_embs = (node_embs+node_embs1)/2
         return node_embs,policy_score,scorer,entropy_object
+
+        # self.GCN_weights,policy_score,scorer,entropy_object,selected_indexes = self.evolve_weights(self.GCN_weights,node_embs,mask,ht)
+        # node_embs = node_embs.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,node_embs.shape[-1]))
+        # Ahat = Ahat.gather(1,selected_indexes.unsqueeze(-1).expand(-1,-1,Ahat.shape[-1]))
+        # Ahat = Ahat.gather(2,selected_indexes.unsqueeze(1).expand(-1,Ahat.shape[1],-1))
+        # di = Ahat.sum(dim=1)
+        # di = di.pow(-1/2)
+        # Ahat =  di.unsqueeze(1)*Ahat*di.unsqueeze(-1).detach()
+        # node_embs = self.activation(Ahat.matmul(node_embs.matmul(self.GCN_weights)))
+        # node_embs1 = self.activation(Ahat.matmul(node_embs.matmul(self.static_weights)))
+        # node_embs = (node_embs+node_embs1)/2
+        # return node_embs,policy_score,scorer,entropy_object
 
 class mat_GRU_cell(torch.nn.Module):
     def __init__(self,args1):
@@ -220,6 +223,6 @@ class TopK_with_h(torch.nn.Module):
         entropy_object = torch.distributions.Categorical(scores).entropy()
         c = scores.log()
         topK_scores =  c.gather(-1,topk_indices)
-        score_policy = topK_scores.mean(dim=1)
+        policy_score = topK_scores.mean(dim=1)
         #we need to transpose the output so that GRUm works
-        return topK_node_embs.transpose(1,2),score_policy,scorer,entropy_object,topk_indices
+        return topK_node_embs.transpose(1,2),policy_score,scorer,entropy_object,topk_indices

@@ -410,7 +410,7 @@ class Seq2SeqAgent(BaseAgent):
                 f_t[..., :-args.angle_feat_size] *= noise
                 cand_visual_feat *= noise
                 near_visual_feat *= noise
-            h_t, c_t, logit, h1,score_policy,scorer,entropy_object = self.decoder(input_a_t, f_t, 
+            h_t, c_t, logit, h1,policy_score,scorer,entropy_object = self.decoder(input_a_t, f_t, 
                                                cand_visual_feat, cand_angle_feat, cand_obj_feat,
                                                near_visual_mask, near_visual_feat, near_angle_feat,
                                                near_obj_mask, near_obj_feat, near_edge_feat, near_id_feat,
@@ -418,7 +418,7 @@ class Seq2SeqAgent(BaseAgent):
                                                ctx, ctx_mask,
                                                already_dropfeat=(speaker is not None))
             #policy_score:mean of topK_scores  batch 
-            policy_score_probs.append(score_policy)
+            policy_score_probs.append(policy_score)
             #h_t:batch rnn_dim
             hidden_states.append(h_t)
             #scorer:batch gcn_dim
