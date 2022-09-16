@@ -8,4 +8,9 @@ def length2mask(length, size=None):
     return mask
 
 if __name__ == "__main__":
-    print(length2mask([5,2,4]))
+    mask = torch.ones(5).cuda()
+    scores = torch.arange(5).cuda()
+    if mask is not None:
+        print(mask.bool())
+        scores.masked_fill_(mask.bool(), -1)
+    print(scores)

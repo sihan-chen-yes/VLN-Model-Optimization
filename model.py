@@ -196,11 +196,12 @@ class ASODecoderLSTM(nn.Module):
         near_visual_mask:batch cand_len 5 
         near_visual_feat:batch cand_len 5 visual_feat_size
         near_angle_feat:batch cand_len 5 angle_feat_size
-        near_obj_mask:batch cand_len 4 obj_num
+        near_obj_mask:batch cand_len 4
         near_obj_feat:batch cand_len 4 obj_num obj_feat_size
         near_edge_feat:batch cand_len 4 angle_feat_size
         near_id_feat:batch cand_len 5
         '''
+        cand_len = cand_obj_feat.shape[1]
         #16 128 -> 16 64  batch angle_feat_size -> batch action_embs_size
         action_embeds = self.action_embedding(action)
         action_embeds = self.drop(action_embeds)
@@ -231,8 +232,10 @@ class ASODecoderLSTM(nn.Module):
             adj_list = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1],object_graph_feat.shape[1]).cuda()
         else:
             adj_list = self.compute_adj_list(near_id_feat)
+        #TODO
         #16 400
-        mask = torch.ones(object_graph_feat.shape[0],object_graph_feat.shape[1]).cuda()
+        cand_obj_mask = torch.zeros(object_graph_feat.shape[0],cand_len * 1 * args.top_N_obj).cuda()
+        obj_mask = torch.cat((cand_obj_mask, near_obj_mask.unsqueeze(3).expand(-1,-1,-1,args.top_N_obj).contiguous().view(object_graph_feat.shape[0], -1)),1)
         #TODO
         #16 400 768 -> 16 400 128 batch N visual_feat_size + angle_feat_size ->  batch N gcn_dim
         object_graph_feat = self.object_mapping(object_graph_feat)
@@ -267,7 +270,7 @@ class ASODecoderLSTM(nn.Module):
         #16 77 640 batch L rnn_dim ctx
         #16 400 batch N
         #16 640 batch rnn_dim
-        node_feats,policy_score,scorer,entropy_object = self.SEM(adj_list,object_graph_feat,ctx,mask,selector)
+        node_feats,policy_score,scorer,entropy_object = self.SEM(adj_list,object_graph_feat,ctx,obj_mask,selector)
         #16 128 128 -> 16 128 300 batch gcn_dim gcn_dim -> batch gcn_dim out_feats
         node_feats = self.object_mapping_out(node_feats)
         #16 300 batch out_feats
